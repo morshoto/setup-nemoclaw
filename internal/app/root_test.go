@@ -489,6 +489,9 @@ type authFailingCloudProvider struct {
 func (s authFailingCloudProvider) AuthCheck(ctx context.Context) (provider.AuthStatus, error) {
 	return provider.AuthStatus{}, s.authErr
 }
+func (s authFailingCloudProvider) CheckAuth(ctx context.Context) (provider.AuthStatus, error) {
+	return provider.AuthStatus{}, s.authErr
+}
 
 type baseImageFailingCloudProvider struct {
 	stubCloudProvider
@@ -496,6 +499,9 @@ type baseImageFailingCloudProvider struct {
 }
 
 func (s baseImageFailingCloudProvider) ListBaseImages(ctx context.Context, region string) ([]provider.BaseImage, error) {
+	return nil, s.baseImageErr
+}
+func (s baseImageFailingCloudProvider) RecommendBaseImages(ctx context.Context, region, computeClass string) ([]provider.BaseImage, error) {
 	return nil, s.baseImageErr
 }
 

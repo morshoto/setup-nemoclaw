@@ -27,7 +27,11 @@ func TestInitWritesConfigFile(t *testing.T) {
 		"",                       // accept default instance g5.xlarge
 		"1",                      // image ubuntu-24.04
 		"20",                     // disk size
-		"1",                      // network private
+		"",                       // accept default public network mode
+		"demo-key",               // ssh key pair name
+		"/tmp/demo.pem",          // ssh private key
+		"203.0.113.0/24",         // ssh cidr
+		"ubuntu",                 // ssh user
 		"y",                      // use NemoClaw
 		"http://localhost:11434", // endpoint
 		"llama3.2",               // model
@@ -61,7 +65,13 @@ func TestInitWritesConfigFile(t *testing.T) {
 		"disk_size_gb: 20",
 		"image:",
 		"id: ami-0123456789abcdef0",
-		"network_mode: private",
+		"network_mode: public",
+		"key_name: demo-key",
+		"private_key_path: /tmp/demo.pem",
+		"cidr: 203.0.113.0/24",
+		"user: ubuntu",
+		"backend: terraform",
+		"module_dir: infra/aws/ec2",
 		"use_nemoclaw: true",
 		"endpoint: http://localhost:11434",
 		"model: llama3.2",
@@ -95,6 +105,10 @@ func TestInitSupportsCPUComputeMode(t *testing.T) {
 		"1", // Ubuntu 22.04 LTS
 		"20",
 		"", // accept default public network mode
+		"demo-key",
+		"/tmp/demo.pem",
+		"203.0.113.0/24",
+		"ubuntu",
 		"y",
 		"", // accept placeholder external endpoint
 		"", // accept default model
@@ -130,6 +144,9 @@ func TestInitSupportsCPUComputeMode(t *testing.T) {
 	}
 	if loaded.Sandbox.NetworkMode != "public" {
 		t.Fatalf("loaded network mode = %q, want public", loaded.Sandbox.NetworkMode)
+	}
+	if loaded.SSH.KeyName != "demo-key" || loaded.SSH.PrivateKeyPath != "/tmp/demo.pem" {
+		t.Fatalf("loaded ssh config = %#v", loaded.SSH)
 	}
 }
 
@@ -229,7 +246,11 @@ sandbox:
 		"",  // accept default instance g5.xlarge
 		"1", // image
 		"20",
-		"1",
+		"",
+		"demo-key",
+		"/tmp/demo.pem",
+		"203.0.113.0/24",
+		"ubuntu",
 		"y",
 		"http://localhost:11434",
 		"llama3.2",
@@ -283,7 +304,11 @@ func TestInitContinuesWhenAWSAuthCheckIsPermissionDenied(t *testing.T) {
 		"",                       // accept default instance g5.xlarge
 		"1",                      // image ubuntu-24.04
 		"20",                     // disk size
-		"1",                      // network private
+		"",                       // accept default public network mode
+		"demo-key",               // ssh key pair name
+		"/tmp/demo.pem",          // ssh private key
+		"203.0.113.0/24",         // ssh cidr
+		"ubuntu",                 // ssh user
 		"y",                      // use NemoClaw
 		"http://localhost:11434", // endpoint
 		"llama3.2",               // model
@@ -333,7 +358,11 @@ func TestInitContinuesWhenAWSAuthCheckFailsAtSTS(t *testing.T) {
 		"",                       // accept default instance g5.xlarge
 		"1",                      // image ubuntu-24.04
 		"20",                     // disk size
-		"1",                      // network private
+		"",                       // accept default public network mode
+		"demo-key",               // ssh key pair name
+		"/tmp/demo.pem",          // ssh private key
+		"203.0.113.0/24",         // ssh cidr
+		"ubuntu",                 // ssh user
 		"y",                      // use NemoClaw
 		"http://localhost:11434", // endpoint
 		"llama3.2",               // model
@@ -383,7 +412,11 @@ func TestInitFallsBackWhenAWSImageLookupIsPermissionDenied(t *testing.T) {
 		"",                       // accept default instance g5.xlarge
 		"1",                      // image fallback selection
 		"20",                     // disk size
-		"1",                      // network private
+		"",                       // accept default public network mode
+		"demo-key",               // ssh key pair name
+		"/tmp/demo.pem",          // ssh private key
+		"203.0.113.0/24",         // ssh cidr
+		"ubuntu",                 // ssh user
 		"y",                      // use NemoClaw
 		"http://localhost:11434", // endpoint
 		"llama3.2",               // model
@@ -434,7 +467,28 @@ func (cpuInitCloudProvider) ListBaseImages(ctx context.Context, region string) (
 	}}, nil
 }
 
+func (cpuInitCloudProvider) RecommendBaseImages(ctx context.Context, region, computeClass string) ([]provider.BaseImage, error) {
+	return []provider.BaseImage{{
+		Name:               "Ubuntu 22.04 LTS",
+		ID:                 "ami-0ubuntu1234567890",
+		Architecture:       "x86_64",
+		Owner:              "canonical",
+		VirtualizationType: "hvm",
+		RootDeviceType:     "ebs",
+		Region:             region,
+		Source:             "mock",
+		SSMParameter:       "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id",
+	}}, nil
+}
+
 func (cpuInitCloudProvider) ListInstanceTypes(ctx context.Context, region string) ([]provider.InstanceType, error) {
+	return []provider.InstanceType{
+		{Name: "t3.xlarge", MemoryGB: 16},
+		{Name: "t3.2xlarge", MemoryGB: 32},
+	}, nil
+}
+
+func (cpuInitCloudProvider) RecommendInstanceTypes(ctx context.Context, region, computeClass string) ([]provider.InstanceType, error) {
 	return []provider.InstanceType{
 		{Name: "t3.xlarge", MemoryGB: 16},
 		{Name: "t3.2xlarge", MemoryGB: 32},
