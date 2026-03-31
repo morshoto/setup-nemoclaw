@@ -60,7 +60,7 @@ func runInfraCreate(ctx context.Context, profile string, cfg *config.Config, ssh
 		return nil, errors.New("config is required")
 	}
 
-	prov := newAWSProvider(profile)
+	prov := newAWSProvider(profile, cfg.Compute.Class)
 	image, err := resolveInfraImage(ctx, prov, cfg)
 	if err != nil {
 		return nil, err
@@ -114,10 +114,11 @@ func runInstallWorkflow(ctx context.Context, profile string, cfg *config.Config,
 
 	inst := runtimeinstall.Installer{Host: exec}
 	result, err := inst.Install(ctx, runtimeinstall.Request{
-		Config:      cfg,
-		UseNemoClaw: &useNemo,
-		Port:        opts.Port,
-		WorkingDir:  opts.WorkingDir,
+		Config:       cfg,
+		UseNemoClaw:  &useNemo,
+		Port:         opts.Port,
+		WorkingDir:   opts.WorkingDir,
+		ComputeClass: cfg.Compute.Class,
 	})
 	return result, resolvedTarget, err
 }
@@ -195,7 +196,7 @@ func runCreateWorkflow(ctx context.Context, profile string, cfg *config.Config, 
 
 func resolveHostTarget(ctx context.Context, profile string, cfg *config.Config, target string) (string, error) {
 	if strings.HasPrefix(strings.TrimSpace(target), "i-") {
-		prov := newAWSProvider(profile)
+		prov := newAWSProvider(profile, "")
 		regions := []string{}
 		if cfg != nil && strings.TrimSpace(cfg.Region.Name) != "" {
 			regions = append(regions, strings.TrimSpace(cfg.Region.Name))

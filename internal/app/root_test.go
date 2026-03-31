@@ -154,7 +154,7 @@ func TestAuthCheckCommandReportsSuccess(t *testing.T) {
 
 func TestInfraCreateCommandReportsCreatedInstance(t *testing.T) {
 	original := newAWSProvider
-	newAWSProvider = func(profile string) provider.CloudProvider {
+	newAWSProvider = func(profile, computeClass string) provider.CloudProvider {
 		return infraCreateStubCloudProvider{stubCloudProvider: stubCloudProvider{profile: profile}}
 	}
 	defer func() { newAWSProvider = original }()
@@ -409,7 +409,7 @@ sandbox:
 
 func stubAWSProviderFactory() func() {
 	original := newAWSProvider
-	newAWSProvider = func(profile string) provider.CloudProvider {
+	newAWSProvider = func(profile, computeClass string) provider.CloudProvider {
 		return stubCloudProvider{profile: profile}
 	}
 	return func() {

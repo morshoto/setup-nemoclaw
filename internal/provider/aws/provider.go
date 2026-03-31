@@ -20,11 +20,13 @@ import (
 	"github.com/aws/smithy-go"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 
+	"openclaw/internal/config"
 	"openclaw/internal/provider"
 )
 
 type Config struct {
-	Profile string
+	Profile      string
+	ComputeClass string
 }
 
 type Provider struct {
@@ -174,11 +176,16 @@ func (p *Provider) ListBaseImages(ctx context.Context, region string) ([]provide
 	}
 	cfg.Region = region
 
-	image, err := p.resolveDLAMIGPUUbuntu2204(ctx, cfg)
-	if err != nil {
-		return nil, err
+	switch config.EffectiveComputeClass(p.Config.ComputeClass) {
+	case config.ComputeClassCPU:
+		return []provider.BaseImage{p.resolveUbuntu2204(ctx, cfg)}, nil
+	default:
+		image, err := p.resolveDLAMIGPUUbuntu2204(ctx, cfg)
+		if err != nil {
+			return nil, err
+		}
+		return []provider.BaseImage{image}, nil
 	}
-	return []provider.BaseImage{image}, nil
 }
 
 func (p *Provider) CreateInstance(ctx context.Context, req provider.CreateInstanceRequest) (*provider.Instance, error) {
@@ -828,4 +835,48 @@ func (p *Provider) resolveDLAMIGPUUbuntu2204(ctx context.Context, cfg awsbase.Co
 		Source:             "aws-ssm-public-parameter",
 		SSMParameter:       parameterName,
 	}, nil
+}
+
+func (p *Provider) resolveUbuntu2204(ctx context.Context, cfg awsbase.Config) provider.BaseImage {
+	client := p.newSSMClient(cfg)
+	const parameterName = "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id"
+	out, err := client.GetParameter(ctx, &ssm.GetParameterInput{Name: awsbase.String(parameterName)})
+	if err != nil {
+		return provider.BaseImage{
+			Name:               "Ubuntu 22.04 LTS",
+			Description:        "Ubuntu Server 22.04 LTS",
+			Architecture:       "x86_64",
+			Owner:              "canonical",
+			VirtualizationType: "hvm",
+			RootDeviceType:     "ebs",
+			Region:             cfg.Region,
+			Source:             "canonical-ssm-public-parameter",
+			SSMParameter:       parameterName,
+		}
+	}
+	if out == nil || out.Parameter == nil || strings.TrimSpace(awsString(out.Parameter.Value)) == "" {
+		return provider.BaseImage{
+			Name:               "Ubuntu 22.04 LTS",
+			Description:        "Ubuntu Server 22.04 LTS",
+			Architecture:       "x86_64",
+			Owner:              "canonical",
+			VirtualizationType: "hvm",
+			RootDeviceType:     "ebs",
+			Region:             cfg.Region,
+			Source:             "canonical-ssm-public-parameter",
+			SSMParameter:       parameterName,
+		}
+	}
+	return provider.BaseImage{
+		Name:               "Ubuntu 22.04 LTS",
+		ID:                 awsString(out.Parameter.Value),
+		Description:        "Ubuntu Server 22.04 LTS",
+		Architecture:       "x86_64",
+		Owner:              "canonical",
+		VirtualizationType: "hvm",
+		RootDeviceType:     "ebs",
+		Region:             cfg.Region,
+		Source:             "canonical-ssm-public-parameter",
+		SSMParameter:       parameterName,
+	}
 }

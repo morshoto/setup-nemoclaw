@@ -74,10 +74,12 @@ func (v Verifier) Verify(ctx context.Context, req Request) (Report, error) {
 
 	report := Report{RuntimeConfigPath: runtimeConfigPath}
 	report.Checks = append(report.Checks,
-		runCommandCheck(ctx, v.Host, "gpu visibility", "nvidia-smi", []string{"-L"}, "Install NVIDIA drivers and verify `nvidia-smi` works."),
 		runCommandCheck(ctx, v.Host, "docker readiness", "docker", []string{"info"}, "Install Docker and ensure the daemon is running."),
 		runRuntimeConfigCheck(ctx, v.Host, runtimeConfigPath, req.Config),
 	)
+	if req.Config == nil || config.EffectiveComputeClass(req.Config.Compute.Class) == config.ComputeClassGPU {
+		report.Checks = append(report.Checks, runCommandCheck(ctx, v.Host, "gpu visibility", "nvidia-smi", []string{"-L"}, "Install NVIDIA drivers and verify `nvidia-smi` works."))
+	}
 
 	endpoint, err := resolveEndpoint(ctx, v.Host, runtimeConfigPath, req.Config)
 	if err != nil {

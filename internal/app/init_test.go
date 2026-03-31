@@ -21,6 +21,7 @@ func TestInitWritesConfigFile(t *testing.T) {
 	output := filepath.Join(dir, "openclaw.yaml")
 	input := strings.Join([]string{
 		"1",                      // platform aws
+		"",                       // accept default GPU compute mode
 		"2",                      // region us-east-1
 		"",                       // accept default instance g5.xlarge
 		"1",                      // image ubuntu-24.04
@@ -104,7 +105,7 @@ func TestInitRejectsNonAWSPlatform(t *testing.T) {
 func TestInitDoesNotCreateAWSProviderBeforePlatformSelection(t *testing.T) {
 	called := false
 	original := newAWSProvider
-	newAWSProvider = func(profile string) provider.CloudProvider {
+	newAWSProvider = func(profile, computeClass string) provider.CloudProvider {
 		called = true
 		return stubCloudProvider{profile: profile}
 	}
@@ -164,6 +165,7 @@ sandbox:
 	output := filepath.Join(dir, "output.yaml")
 	input := strings.Join([]string{
 		"1", // platform aws
+		"",  // accept default GPU compute mode
 		"",  // accept preselected region from existing config
 		"",  // accept default instance g5.xlarge
 		"1", // image
@@ -200,7 +202,7 @@ sandbox:
 
 func TestInitContinuesWhenAWSAuthCheckIsPermissionDenied(t *testing.T) {
 	original := newAWSProvider
-	newAWSProvider = func(profile string) provider.CloudProvider {
+	newAWSProvider = func(profile, computeClass string) provider.CloudProvider {
 		return authFailingCloudProvider{
 			stubCloudProvider: stubCloudProvider{profile: profile},
 			authErr: &awsprovider.AuthError{
@@ -217,6 +219,7 @@ func TestInitContinuesWhenAWSAuthCheckIsPermissionDenied(t *testing.T) {
 	output := filepath.Join(dir, "openclaw.yaml")
 	input := strings.Join([]string{
 		"1",                      // platform aws
+		"",                       // accept default GPU compute mode
 		"2",                      // region us-east-1
 		"",                       // accept default instance g5.xlarge
 		"1",                      // image ubuntu-24.04
@@ -249,7 +252,7 @@ func TestInitContinuesWhenAWSAuthCheckIsPermissionDenied(t *testing.T) {
 
 func TestInitContinuesWhenAWSAuthCheckFailsAtSTS(t *testing.T) {
 	original := newAWSProvider
-	newAWSProvider = func(profile string) provider.CloudProvider {
+	newAWSProvider = func(profile, computeClass string) provider.CloudProvider {
 		return authFailingCloudProvider{
 			stubCloudProvider: stubCloudProvider{profile: profile},
 			authErr: &awsprovider.AuthError{
@@ -266,6 +269,7 @@ func TestInitContinuesWhenAWSAuthCheckFailsAtSTS(t *testing.T) {
 	output := filepath.Join(dir, "openclaw.yaml")
 	input := strings.Join([]string{
 		"1",                      // platform aws
+		"",                       // accept default GPU compute mode
 		"2",                      // region us-east-1
 		"",                       // accept default instance g5.xlarge
 		"1",                      // image ubuntu-24.04
@@ -298,7 +302,7 @@ func TestInitContinuesWhenAWSAuthCheckFailsAtSTS(t *testing.T) {
 
 func TestInitFallsBackWhenAWSImageLookupIsPermissionDenied(t *testing.T) {
 	original := newAWSProvider
-	newAWSProvider = func(profile string) provider.CloudProvider {
+	newAWSProvider = func(profile, computeClass string) provider.CloudProvider {
 		return baseImageFailingCloudProvider{
 			stubCloudProvider: stubCloudProvider{profile: profile},
 			baseImageErr: &awsprovider.AuthError{
@@ -315,6 +319,7 @@ func TestInitFallsBackWhenAWSImageLookupIsPermissionDenied(t *testing.T) {
 	output := filepath.Join(dir, "openclaw.yaml")
 	input := strings.Join([]string{
 		"1",                      // platform aws
+		"",                       // accept default GPU compute mode
 		"2",                      // region us-east-1
 		"",                       // accept default instance g5.xlarge
 		"1",                      // image fallback selection

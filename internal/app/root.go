@@ -78,7 +78,7 @@ func newAuthCheckCommand(app *App) *cobra.Command {
 		Use:   "check",
 		Short: "Verify AWS credentials and API access",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			status, err := newAWSProvider(app.opts.Profile).AuthCheck(cmd.Context())
+			status, err := newAWSProvider(app.opts.Profile, "").AuthCheck(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -145,11 +145,11 @@ func newInitCommand(app *App) *cobra.Command {
 				return err
 			}
 			session := prompt.NewSession(cmd.InOrStdin(), cmd.OutOrStdout())
-			wizard := setup.NewWizard(session, cmd.OutOrStdout(), func(platform string) provider.CloudProvider {
+			wizard := setup.NewWizard(session, cmd.OutOrStdout(), func(platform, computeClass string) provider.CloudProvider {
 				if platform != config.PlatformAWS {
 					return nil
 				}
-				return newAWSProvider(app.opts.Profile)
+				return newAWSProvider(app.opts.Profile, computeClass)
 			}, existing)
 			cfg, err := wizard.Run(cmd.Context())
 			if err != nil {
@@ -223,7 +223,7 @@ func newQuotaCheckCommand(app *App) *cobra.Command {
 				instanceFamily = "g5"
 			}
 
-			provider := newAWSProvider(app.opts.Profile)
+			provider := newAWSProvider(app.opts.Profile, "")
 			if _, err := provider.AuthCheck(cmd.Context()); err != nil {
 				return err
 			}
@@ -243,8 +243,8 @@ func newQuotaCheckCommand(app *App) *cobra.Command {
 	return cmd
 }
 
-var newAWSProvider = func(profile string) provider.CloudProvider {
-	return awsprovider.New(awsprovider.Config{Profile: profile})
+var newAWSProvider = func(profile, computeClass string) provider.CloudProvider {
+	return awsprovider.New(awsprovider.Config{Profile: profile, ComputeClass: computeClass})
 }
 
 func existingConfig(path string) (*config.Config, error) {

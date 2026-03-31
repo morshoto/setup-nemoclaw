@@ -18,7 +18,7 @@ import (
 type Wizard struct {
 	Prompter        *prompt.Session
 	Out             io.Writer
-	ProviderFactory func(platform string) provider.CloudProvider
+	ProviderFactory func(platform, computeClass string) provider.CloudProvider
 	Provider        provider.CloudProvider
 	Existing        *config.Config
 }
@@ -38,8 +38,14 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 		return nil, fmt.Errorf("%s is not implemented yet", platform)
 	}
 
+	computeClass := defaultComputeClass(w.Existing)
+	computeClass, err = w.Prompter.Select("Select compute mode", []string{config.ComputeClassCPU, config.ComputeClassGPU}, computeClass)
+	if err != nil {
+		return nil, err
+	}
+
 	if w.Provider == nil && w.ProviderFactory != nil {
-		w.Provider = w.ProviderFactory(platform)
+		w.Provider = w.ProviderFactory(platform, computeClass)
 	}
 	if w.Provider != nil {
 		authCtx, cancel := bestEffortAWSContext(ctx)
@@ -76,15 +82,15 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	instanceType, err := w.Prompter.Select("Select instance type", instanceTypes, defaultOption(instanceTypes, "g5.xlarge"))
+	instanceType, err := w.Prompter.Select("Select instance type", instanceTypes, defaultInstanceType(computeClass))
 	if err != nil {
 		return nil, err
 	}
 
-	images, err := w.listImages(ctx, region)
+	images, err := w.listImages(ctx, region, computeClass)
 	if err != nil {
 		fmt.Fprintln(w.Out, "Warning: AWS image lookup unavailable; using bundled fallback images.")
-		images = fallbackAWSBaseImages(region)
+		images = fallbackAWSBaseImages(region, computeClass)
 	}
 	image, err := selectBaseImage(w.Prompter, images)
 	if err != nil {
@@ -96,7 +102,7 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 		return nil, err
 	}
 
-	networkMode, err := w.Prompter.Select("Select network mode", []string{"private", "public"}, "private")
+	networkMode, err := w.Prompter.Select("Select network mode", []string{"public", "private"}, defaultNetworkMode(computeClass))
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +112,7 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 		return nil, err
 	}
 
-	nimEndpoint, err := w.Prompter.Text("NIM endpoint", "http://localhost:11434")
+	nimEndpoint, err := w.Prompter.Text("NIM endpoint", defaultEndpoint(computeClass))
 	if err != nil {
 		return nil, err
 	}
@@ -118,6 +124,7 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 
 	cfg := &config.Config{
 		Platform: config.PlatformConfig{Name: platform},
+		Compute:  config.ComputeConfig{Class: computeClass},
 		Region:   config.RegionConfig{Name: region},
 		Instance: config.InstanceConfig{Type: instanceType, DiskSizeGB: diskSize},
 		Image:    config.ImageConfig{Name: image.Name, ID: image.ID},
@@ -181,9 +188,9 @@ func (w *Wizard) listInstanceTypes(ctx context.Context, region string) ([]string
 	return options, nil
 }
 
-func (w *Wizard) listImages(ctx context.Context, region string) ([]provider.BaseImage, error) {
+func (w *Wizard) listImages(ctx context.Context, region, computeClass string) ([]provider.BaseImage, error) {
 	if w.Provider == nil {
-		return fallbackAWSBaseImages(region), nil
+		return fallbackAWSBaseImages(region, computeClass), nil
 	}
 	imageCtx, cancel := bestEffortAWSContext(ctx)
 	defer cancel()
@@ -192,7 +199,7 @@ func (w *Wizard) listImages(ctx context.Context, region string) ([]provider.Base
 		return nil, err
 	}
 	if len(items) == 0 {
-		return fallbackAWSBaseImages(region), nil
+		return fallbackAWSBaseImages(region, computeClass), nil
 	}
 	return items, nil
 }
@@ -251,6 +258,37 @@ func defaultOption(options []string, fallback string) string {
 	return options[0]
 }
 
+func defaultComputeClass(existing *config.Config) string {
+	if existing == nil {
+		return config.ComputeClassGPU
+	}
+	if class := config.EffectiveComputeClass(existing.Compute.Class); class != "" {
+		return class
+	}
+	return config.ComputeClassGPU
+}
+
+func defaultInstanceType(computeClass string) string {
+	if config.EffectiveComputeClass(computeClass) == config.ComputeClassCPU {
+		return "t3.xlarge"
+	}
+	return "g5.xlarge"
+}
+
+func defaultNetworkMode(computeClass string) string {
+	if config.EffectiveComputeClass(computeClass) == config.ComputeClassCPU {
+		return "public"
+	}
+	return "private"
+}
+
+func defaultEndpoint(computeClass string) string {
+	if config.EffectiveComputeClass(computeClass) == config.ComputeClassCPU {
+		return "https://nim.example.com"
+	}
+	return "http://localhost:11434"
+}
+
 func selectBaseImage(prompter *prompt.Session, images []provider.BaseImage) (provider.BaseImage, error) {
 	if len(images) == 0 {
 		return provider.BaseImage{}, errors.New("no base images available")
@@ -261,7 +299,7 @@ func selectBaseImage(prompter *prompt.Session, images []provider.BaseImage) (pro
 		options = append(options, image.Name)
 	}
 	defaultName := images[0].Name
-	if preferred := findBaseImage(images, "AWS Deep Learning AMI GPU Ubuntu 22.04"); preferred.Name != "" {
+	if preferred := findBaseImage(images, preferredBaseImageName(images)); preferred.Name != "" {
 		defaultName = preferred.Name
 	}
 
@@ -285,6 +323,25 @@ func findBaseImage(images []provider.BaseImage, name string) provider.BaseImage 
 	return provider.BaseImage{}
 }
 
+func preferredBaseImageName(images []provider.BaseImage) string {
+	for _, image := range images {
+		lower := strings.ToLower(strings.TrimSpace(image.Name))
+		if strings.Contains(lower, "ubuntu 22.04") && !strings.Contains(lower, "gpu") {
+			return image.Name
+		}
+	}
+	for _, image := range images {
+		lower := strings.ToLower(strings.TrimSpace(image.Name))
+		if strings.Contains(lower, "deep learning ami gpu ubuntu 22.04") {
+			return image.Name
+		}
+	}
+	if len(images) > 0 {
+		return images[0].Name
+	}
+	return ""
+}
+
 func formatUsage(value *int) string {
 	if value == nil {
 		return "n/a"
@@ -292,7 +349,19 @@ func formatUsage(value *int) string {
 	return fmt.Sprintf("%d", *value)
 }
 
-func fallbackAWSBaseImages(region string) []provider.BaseImage {
+func fallbackAWSBaseImages(region, computeClass string) []provider.BaseImage {
+	if config.EffectiveComputeClass(computeClass) == config.ComputeClassCPU {
+		return []provider.BaseImage{{
+			Name:               "Ubuntu 22.04 LTS",
+			Architecture:       "x86_64",
+			Owner:              "canonical",
+			VirtualizationType: "hvm",
+			RootDeviceType:     "ebs",
+			Region:             region,
+			Source:             "fallback",
+			SSMParameter:       "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id",
+		}}
+	}
 	return []provider.BaseImage{{
 		Name:               "AWS Deep Learning AMI GPU Ubuntu 22.04",
 		Architecture:       "x86_64",

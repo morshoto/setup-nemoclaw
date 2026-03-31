@@ -13,9 +13,14 @@ import (
 )
 
 const PlatformAWS = "aws"
+const (
+	ComputeClassGPU = "gpu"
+	ComputeClassCPU = "cpu"
+)
 
 type Config struct {
 	Platform PlatformConfig `yaml:"platform"`
+	Compute  ComputeConfig  `yaml:"compute,omitempty"`
 	Region   RegionConfig   `yaml:"region"`
 	Instance InstanceConfig `yaml:"instance"`
 	Image    ImageConfig    `yaml:"image"`
@@ -25,6 +30,10 @@ type Config struct {
 
 type PlatformConfig struct {
 	Name string `yaml:"name"`
+}
+
+type ComputeConfig struct {
+	Class string `yaml:"class,omitempty"`
 }
 
 type RegionConfig struct {
@@ -118,6 +127,10 @@ func Validate(cfg *Config) error {
 
 	var v ValidationError
 
+	if class := strings.TrimSpace(cfg.Compute.Class); class != "" && !isValidComputeClass(class) {
+		v.Add("compute.class", fmt.Sprintf("unsupported compute class %q", class))
+	}
+
 	if cfg.Platform.Name == "" {
 		v.Add("platform.name", "is required")
 	} else if cfg.Platform.Name != PlatformAWS {
@@ -182,4 +195,22 @@ func Save(path string, cfg *Config) error {
 		return fmt.Errorf("marshal config: %w", err)
 	}
 	return os.WriteFile(path, data, 0o600)
+}
+
+func EffectiveComputeClass(class string) string {
+	switch strings.ToLower(strings.TrimSpace(class)) {
+	case ComputeClassCPU:
+		return ComputeClassCPU
+	default:
+		return ComputeClassGPU
+	}
+}
+
+func isValidComputeClass(class string) bool {
+	switch strings.ToLower(strings.TrimSpace(class)) {
+	case ComputeClassCPU, ComputeClassGPU:
+		return true
+	default:
+		return false
+	}
 }

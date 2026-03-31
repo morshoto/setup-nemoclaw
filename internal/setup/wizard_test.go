@@ -58,6 +58,7 @@ func (f fakeProvider) GetInstance(ctx context.Context, region, instanceID string
 func TestWizardWarnsAndContinuesWhenQuotaInsufficient(t *testing.T) {
 	input := strings.Join([]string{
 		"1", // platform aws
+		"",  // accept default GPU compute mode
 		"1", // region
 		"y", // continue despite quota warning
 		"",  // accept default instance type (g5.xlarge)
@@ -74,7 +75,7 @@ func TestWizardWarnsAndContinuesWhenQuotaInsufficient(t *testing.T) {
 	wizard := NewWizard(
 		prompt.NewSession(strings.NewReader(input), &bytes.Buffer{}),
 		&bytes.Buffer{},
-		func(platform string) provider.CloudProvider {
+		func(platform, computeClass string) provider.CloudProvider {
 			return fakeProvider{
 				regions: []string{"us-east-1", "us-west-2"},
 				report: provider.GPUQuotaReport{
@@ -107,6 +108,7 @@ func TestWizardWarnsAndContinuesWhenQuotaInsufficient(t *testing.T) {
 func TestWizardWarnsAndContinuesWhenQuotaCheckUnavailable(t *testing.T) {
 	input := strings.Join([]string{
 		"1", // platform aws
+		"",  // accept default GPU compute mode
 		"1", // region
 		"",  // accept default instance type
 		"1", // base image
@@ -122,7 +124,7 @@ func TestWizardWarnsAndContinuesWhenQuotaCheckUnavailable(t *testing.T) {
 	wizard := NewWizard(
 		prompt.NewSession(strings.NewReader(input), out),
 		out,
-		func(platform string) provider.CloudProvider {
+		func(platform, computeClass string) provider.CloudProvider {
 			return fakeProvider{
 				regions:  []string{"us-east-1", "us-west-2"},
 				quotaErr: errors.New("security token invalid"),
@@ -146,6 +148,7 @@ func TestWizardWarnsAndContinuesWhenQuotaCheckUnavailable(t *testing.T) {
 func TestWizardFallsBackToBundledImagesWhenSSMIsUnavailable(t *testing.T) {
 	input := strings.Join([]string{
 		"1", // platform aws
+		"",  // accept default GPU compute mode
 		"1", // region
 		"",  // accept default instance type
 		"1", // bundled fallback image
@@ -161,7 +164,7 @@ func TestWizardFallsBackToBundledImagesWhenSSMIsUnavailable(t *testing.T) {
 	wizard := NewWizard(
 		prompt.NewSession(strings.NewReader(input), out),
 		out,
-		func(platform string) provider.CloudProvider {
+		func(platform, computeClass string) provider.CloudProvider {
 			return fakeProvider{
 				regions: []string{"us-east-1", "us-west-2"},
 				report: provider.GPUQuotaReport{
@@ -197,6 +200,7 @@ func TestWizardFallsBackToBundledImagesWhenSSMIsUnavailable(t *testing.T) {
 func TestWizardFallsBackToBundledImagesWhenImageLookupFails(t *testing.T) {
 	input := strings.Join([]string{
 		"1", // platform aws
+		"",  // accept default GPU compute mode
 		"1", // region
 		"",  // accept default instance type
 		"1", // bundled fallback image
@@ -212,7 +216,7 @@ func TestWizardFallsBackToBundledImagesWhenImageLookupFails(t *testing.T) {
 	wizard := NewWizard(
 		prompt.NewSession(strings.NewReader(input), out),
 		out,
-		func(platform string) provider.CloudProvider {
+		func(platform, computeClass string) provider.CloudProvider {
 			return fakeProvider{
 				regions: []string{"us-east-1", "us-west-2"},
 				report: provider.GPUQuotaReport{

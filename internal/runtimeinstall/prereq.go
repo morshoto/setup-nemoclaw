@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"openclaw/internal/config"
 	"openclaw/internal/host"
 )
 
@@ -34,6 +35,7 @@ func (r PrereqReport) Ready() bool {
 type PrereqChecker struct {
 	Host          host.Executor
 	RequirePython bool
+	ComputeClass  string
 }
 
 func (c PrereqChecker) Check(ctx context.Context) (PrereqReport, error) {
@@ -42,9 +44,13 @@ func (c PrereqChecker) Check(ctx context.Context) (PrereqReport, error) {
 	}
 
 	checks := []Check{
-		c.runCheck(ctx, "nvidia-smi", []string{"-L"}, "Install NVIDIA drivers and verify `nvidia-smi` works.", true),
 		c.runCheck(ctx, "docker", []string{"info"}, "Install Docker and ensure the daemon is running.", true),
-		c.runDockerGPUCheck(ctx),
+	}
+	if config.EffectiveComputeClass(c.ComputeClass) == config.ComputeClassGPU {
+		checks = append(checks,
+			c.runCheck(ctx, "nvidia-smi", []string{"-L"}, "Install NVIDIA drivers and verify `nvidia-smi` works.", true),
+			c.runDockerGPUCheck(ctx),
+		)
 	}
 	if c.RequirePython {
 		checks = append(checks, c.runPythonCheck(ctx))
