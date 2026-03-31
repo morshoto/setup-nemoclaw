@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"openclaw/internal/host"
 	"openclaw/internal/config"
+	"openclaw/internal/host"
 	infratf "openclaw/internal/infra/terraform"
 	"openclaw/internal/provider"
 	awsprovider "openclaw/internal/provider/aws"
@@ -173,14 +173,14 @@ func TestInfraCreateCommandReportsCreatedInstance(t *testing.T) {
 	newTerraformBackend = func(profile string, cfg *config.Config) (infratf.InfraBackend, error) {
 		return fakeTerraformBackend{
 			output: &infratf.InfraOutput{
-				InstanceID:        "i-0123456789abcdef0",
-				PublicIP:          "203.0.113.10",
-				PrivateIP:         "10.0.0.10",
-				ConnectionInfo:    "ssh -i <your-key>.pem ubuntu@203.0.113.10",
-				SecurityGroupID:   "sg-0123456789abcdef0",
+				InstanceID:         "i-0123456789abcdef0",
+				PublicIP:           "203.0.113.10",
+				PrivateIP:          "10.0.0.10",
+				ConnectionInfo:     "ssh -i <your-key>.pem ubuntu@203.0.113.10",
+				SecurityGroupID:    "sg-0123456789abcdef0",
 				SecurityGroupRules: []string{"allow tcp/22 from 203.0.113.0/24"},
-				Region:            cfg.Region.Name,
-				NetworkMode:       "public",
+				Region:             cfg.Region.Name,
+				NetworkMode:        "public",
 			},
 		}, nil
 	}
@@ -449,14 +449,14 @@ func TestCreateCommandRunsEndToEndWorkflow(t *testing.T) {
 	newTerraformBackend = func(profile string, cfg *config.Config) (infratf.InfraBackend, error) {
 		return fakeTerraformBackend{
 			output: &infratf.InfraOutput{
-				InstanceID:        "i-0123456789abcdef0",
-				PublicIP:          "203.0.113.10",
-				PrivateIP:         "10.0.0.10",
-				ConnectionInfo:    "ssh -i <your-key>.pem ubuntu@203.0.113.10",
-				SecurityGroupID:   "sg-0123456789abcdef0",
+				InstanceID:         "i-0123456789abcdef0",
+				PublicIP:           "203.0.113.10",
+				PrivateIP:          "10.0.0.10",
+				ConnectionInfo:     "ssh -i <your-key>.pem ubuntu@203.0.113.10",
+				SecurityGroupID:    "sg-0123456789abcdef0",
 				SecurityGroupRules: []string{"allow tcp/22 from 203.0.113.0/24"},
-				Region:            cfg.Region.Name,
-				NetworkMode:       "public",
+				Region:             cfg.Region.Name,
+				NetworkMode:        "public",
 			},
 		}, nil
 	}
@@ -685,9 +685,15 @@ type fakeTerraformBackend struct {
 }
 
 func (f fakeTerraformBackend) Init(ctx context.Context, workdir string) error { return nil }
-func (f fakeTerraformBackend) Plan(ctx context.Context, workdir string, varsFile string) error { return nil }
-func (f fakeTerraformBackend) Apply(ctx context.Context, workdir string, varsFile string) error { return nil }
-func (f fakeTerraformBackend) Destroy(ctx context.Context, workdir string, varsFile string) error { return nil }
+func (f fakeTerraformBackend) Plan(ctx context.Context, workdir string, varsFile string) error {
+	return nil
+}
+func (f fakeTerraformBackend) Apply(ctx context.Context, workdir string, varsFile string) error {
+	return nil
+}
+func (f fakeTerraformBackend) Destroy(ctx context.Context, workdir string, varsFile string) error {
+	return nil
+}
 func (f fakeTerraformBackend) Output(ctx context.Context, workdir string) (*infratf.InfraOutput, error) {
 	if f.output == nil {
 		return &infratf.InfraOutput{}, nil

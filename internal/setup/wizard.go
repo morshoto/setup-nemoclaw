@@ -7,8 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/netip"
-	"path/filepath"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -28,6 +28,7 @@ type Wizard struct {
 }
 
 const initAWSLookupTimeout = 5 * time.Second
+
 var detectInitSSHCIDR = defaultDetectInitSSHCIDR
 
 func NewWizard(prompter *prompt.Session, out io.Writer, factory func(platform, computeClass string) provider.CloudProvider, existing *config.Config) *Wizard {
@@ -178,10 +179,10 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 		Image:    config.ImageConfig{Name: image.Name, ID: image.ID},
 		Runtime:  config.RuntimeConfig{Endpoint: nimEndpoint, Model: model},
 		SSH: config.SSHConfig{
-			KeyName:       sshKeyName,
+			KeyName:        sshKeyName,
 			PrivateKeyPath: sshPrivateKeyPath,
-			CIDR:          sshCIDR,
-			User:          sshUser,
+			CIDR:           sshCIDR,
+			User:           sshUser,
 		},
 		Infra: config.InfraConfig{
 			Backend:   "terraform",

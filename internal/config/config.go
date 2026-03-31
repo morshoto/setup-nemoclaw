@@ -44,7 +44,7 @@ type RegionConfig struct {
 
 type InstanceConfig struct {
 	Type        string `yaml:"type"`
-	DiskSizeGB   int    `yaml:"disk_size_gb"`
+	DiskSizeGB  int    `yaml:"disk_size_gb"`
 	NetworkMode string `yaml:"network_mode,omitempty"`
 }
 
@@ -60,10 +60,10 @@ type RuntimeConfig struct {
 }
 
 type SSHConfig struct {
-	KeyName         string `yaml:"key_name,omitempty"`
-	PrivateKeyPath   string `yaml:"private_key_path,omitempty"`
-	CIDR            string `yaml:"cidr,omitempty"`
-	User            string `yaml:"user,omitempty"`
+	KeyName        string `yaml:"key_name,omitempty"`
+	PrivateKeyPath string `yaml:"private_key_path,omitempty"`
+	CIDR           string `yaml:"cidr,omitempty"`
+	User           string `yaml:"user,omitempty"`
 }
 
 type InfraConfig struct {

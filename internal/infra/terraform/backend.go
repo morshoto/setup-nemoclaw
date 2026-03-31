@@ -21,14 +21,14 @@ type InfraBackend interface {
 }
 
 type InfraOutput struct {
-	InstanceID        string   `json:"instance_id"`
-	PublicIP          string   `json:"public_ip"`
-	PrivateIP         string   `json:"private_ip"`
-	ConnectionInfo    string   `json:"connection_info"`
-	SecurityGroupID   string   `json:"security_group_id"`
+	InstanceID         string   `json:"instance_id"`
+	PublicIP           string   `json:"public_ip"`
+	PrivateIP          string   `json:"private_ip"`
+	ConnectionInfo     string   `json:"connection_info"`
+	SecurityGroupID    string   `json:"security_group_id"`
 	SecurityGroupRules []string `json:"security_group_rules"`
-	Region            string   `json:"region"`
-	NetworkMode       string   `json:"network_mode"`
+	Region             string   `json:"region"`
+	NetworkMode        string   `json:"network_mode"`
 }
 
 type TerraformBackend struct {
