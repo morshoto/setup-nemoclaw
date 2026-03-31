@@ -12,6 +12,17 @@ import (
 
 var errCursorMenuUnavailable = errors.New("cursor menu unavailable")
 
+const (
+	ansiReset       = "\033[0m"
+	ansiBold        = "\033[1m"
+	ansiDim         = "\033[2m"
+	ansiGreen       = "\033[32m"
+	ansiYellow      = "\033[33m"
+	ansiCyan        = "\033[36m"
+	ansiBrightGreen = "\033[1;32m"
+	ansiBrightCyan  = "\033[1;36m"
+)
+
 type Session struct {
 	in          *bufio.Reader
 	out         io.Writer
@@ -66,13 +77,14 @@ func (s *Session) Select(label string, options []string, defaultValue string) (s
 }
 
 func (s *Session) selectWithLine(label string, options []string, defaultValue string) (string, error) {
-	fmt.Fprintf(s.out, "%s\n", label)
+	fmt.Fprintln(s.out, s.style(ansiBrightCyan, label))
 	for i, option := range options {
 		marker := ""
 		if option == defaultValue {
-			marker = " (default)"
+			marker = s.style(ansiYellow, " (default)")
 		}
-		fmt.Fprintf(s.out, "  %d) %s%s\n", i+1, option, marker)
+		line := fmt.Sprintf("  %d) %s%s", i+1, option, marker)
+		fmt.Fprintln(s.out, line)
 	}
 	input, err := s.readLine()
 	if err != nil {
@@ -103,7 +115,7 @@ func (s *Session) Confirm(label string, defaultValue bool) (bool, error) {
 	if defaultValue {
 		indicator = "Y/n"
 	}
-	fmt.Fprintf(s.out, "%s [%s]: ", label, indicator)
+	fmt.Fprintf(s.out, "%s [%s]: ", s.style(ansiBrightCyan, label), s.style(ansiYellow, indicator))
 	input, err := s.readLine()
 	if err != nil {
 		return false, err
@@ -127,9 +139,9 @@ func (s *Session) Text(label, defaultValue string) (string, error) {
 	}
 
 	if defaultValue != "" {
-		fmt.Fprintf(s.out, "%s [%s]: ", label, defaultValue)
+		fmt.Fprintf(s.out, "%s [%s]: ", s.style(ansiBrightCyan, label), s.style(ansiYellow, defaultValue))
 	} else {
-		fmt.Fprintf(s.out, "%s: ", label)
+		fmt.Fprintf(s.out, "%s: ", s.style(ansiBrightCyan, label))
 	}
 	input, err := s.readLine()
 	if err != nil {
@@ -147,9 +159,9 @@ func (s *Session) Int(label string, defaultValue int) (int, error) {
 	}
 
 	if defaultValue != 0 {
-		fmt.Fprintf(s.out, "%s [%d]: ", label, defaultValue)
+		fmt.Fprintf(s.out, "%s [%d]: ", s.style(ansiBrightCyan, label), defaultValue)
 	} else {
-		fmt.Fprintf(s.out, "%s: ", label)
+		fmt.Fprintf(s.out, "%s: ", s.style(ansiBrightCyan, label))
 	}
 	input, err := s.readLine()
 	if err != nil {
@@ -181,4 +193,15 @@ func fallbackValue(defaultValue string, options []string) (string, error) {
 		return options[0], nil
 	}
 	return "", fmt.Errorf("interactive input required")
+}
+
+func (s *Session) supportsColor() bool {
+	return s.outFile != nil && isTerminalFile(s.outFile)
+}
+
+func (s *Session) style(code, text string) string {
+	if !s.supportsColor() || text == "" {
+		return text
+	}
+	return code + text + ansiReset
 }

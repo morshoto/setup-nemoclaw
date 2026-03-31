@@ -242,7 +242,7 @@ func TestInitContinuesWhenAWSAuthCheckIsPermissionDenied(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if got := stdout.String(); !strings.Contains(got, "Warning: AWS auth check could not verify caller identity") {
+	if got := stdout.String(); !strings.Contains(got, "Warning: AWS auth check unavailable; continuing.") {
 		t.Fatalf("stdout = %q, want permission-denied warning", got)
 	}
 }
@@ -293,7 +293,7 @@ func TestInitFallsBackWhenAWSImageLookupIsPermissionDenied(t *testing.T) {
 	}
 	got := stdout.String()
 	for _, fragment := range []string{
-		"Warning: AWS image lookup could not reach SSM",
+		"Warning: AWS image lookup unavailable; using bundled fallback images.",
 		"Summary",
 		"image: AWS Deep Learning AMI GPU Ubuntu 22.04",
 	} {

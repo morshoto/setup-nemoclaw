@@ -135,7 +135,7 @@ func TestWizardWarnsAndContinuesWhenQuotaCheckUnavailable(t *testing.T) {
 	if cfg.Region.Name != "us-east-1" {
 		t.Fatalf("Region.Name = %q, want us-east-1", cfg.Region.Name)
 	}
-	if got := out.String(); !strings.Contains(got, "Warning: GPU quota check could not run: security token invalid") {
+	if got := out.String(); !strings.Contains(got, "Warning: GPU quota check unavailable; continuing.") {
 		t.Fatalf("output = %q, want quota warning", got)
 	}
 }
@@ -186,7 +186,7 @@ func TestWizardFallsBackToBundledImagesWhenSSMIsUnavailable(t *testing.T) {
 	if cfg.Image.Name != "AWS Deep Learning AMI GPU Ubuntu 22.04" {
 		t.Fatalf("Image.Name = %q, want bundled fallback image", cfg.Image.Name)
 	}
-	if got := out.String(); !strings.Contains(got, "Warning: AWS image lookup could not reach SSM:") {
+	if got := out.String(); !strings.Contains(got, "Warning: AWS image lookup unavailable; using bundled fallback images.") {
 		t.Fatalf("output = %q, want image lookup warning", got)
 	}
 }

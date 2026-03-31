@@ -50,7 +50,7 @@ func (s *Session) selectWithCursor(label string, options []string, defaultValue 
 		}
 	}
 
-	lines := renderMenu(s.out, label, options, defaultValue, selected, 0)
+	lines := s.renderMenu(label, options, defaultValue, selected, 0)
 	for {
 		key, err := s.readMenuKey()
 		if err != nil {
@@ -75,7 +75,7 @@ func (s *Session) selectWithCursor(label string, options []string, defaultValue 
 			continue
 		}
 
-		lines = renderMenu(s.out, label, options, defaultValue, selected, lines)
+		lines = s.renderMenu(label, options, defaultValue, selected, lines)
 	}
 }
 
@@ -145,11 +145,11 @@ func (s *Session) readMenuKey() (menuKey, error) {
 	return menuKey{kind: menuKeyUnknown}, nil
 }
 
-func renderMenu(out io.Writer, label string, options []string, defaultValue string, selected, previousLines int) int {
+func (s *Session) renderMenu(label string, options []string, defaultValue string, selected, previousLines int) int {
 	if previousLines > 0 {
-		fmt.Fprintf(out, "\033[%dA", previousLines)
+		fmt.Fprintf(s.out, "\033[%dA", previousLines)
 	}
-	writeMenuLine(out, label)
+	writeMenuLine(s.out, s.style(ansiBrightCyan, label))
 	for i, option := range options {
 		prefix := "  "
 		if i == selected {
@@ -157,9 +157,13 @@ func renderMenu(out io.Writer, label string, options []string, defaultValue stri
 		}
 		marker := ""
 		if option == defaultValue {
-			marker = " (default)"
+			marker = s.style(ansiYellow, " (default)")
 		}
-		writeMenuLine(out, fmt.Sprintf("%s%s%s", prefix, option, marker))
+		text := option
+		if i == selected {
+			text = s.style(ansiBrightGreen, option)
+		}
+		writeMenuLine(s.out, fmt.Sprintf("%s%s%s", prefix, text, marker))
 	}
 	return len(options) + 1
 }

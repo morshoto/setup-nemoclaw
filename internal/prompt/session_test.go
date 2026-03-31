@@ -82,10 +82,11 @@ func TestSessionReadMenuKeyParsesArrowsAndDigits(t *testing.T) {
 }
 
 func TestRenderMenuClearsPreviousLinesBeforeRedraw(t *testing.T) {
-	var out bytes.Buffer
+	out := &bytes.Buffer{}
+	session := NewSession(strings.NewReader(""), out)
 
-	lines := renderMenu(&out, "Select platform", []string{"aws", "gcp"}, "aws", 0, 0)
-	renderMenu(&out, "Select platform", []string{"aws", "gcp"}, "aws", 1, lines)
+	lines := session.renderMenu("Select platform", []string{"aws", "gcp"}, "aws", 0, 0)
+	session.renderMenu("Select platform", []string{"aws", "gcp"}, "aws", 1, lines)
 
 	got := out.String()
 	if count := strings.Count(got, "\033[2K"); count != 6 {

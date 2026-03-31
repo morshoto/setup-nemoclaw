@@ -42,7 +42,7 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 		if _, err := w.Provider.AuthCheck(ctx); err != nil {
 			var authErr *awsprovider.AuthError
 			if errors.As(err, &authErr) && authErr.Kind == "permission_denied" {
-				fmt.Fprintf(w.Out, "Warning: AWS auth check could not verify caller identity: %v\n", err)
+				fmt.Fprintln(w.Out, "Warning: AWS auth check unavailable; continuing.")
 			} else {
 				return nil, err
 			}
@@ -79,7 +79,7 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 	if err != nil {
 		var authErr *awsprovider.AuthError
 		if errors.As(err, &authErr) && (authErr.Kind == "permission_denied" || authErr.Kind == "no_credentials") {
-			fmt.Fprintf(w.Out, "Warning: AWS image lookup could not reach SSM: %v\n", err)
+			fmt.Fprintln(w.Out, "Warning: AWS image lookup unavailable; using bundled fallback images.")
 			images = fallbackAWSBaseImages(region)
 		} else {
 			return nil, err
@@ -188,7 +188,7 @@ func (w *Wizard) listImages(ctx context.Context, region string) ([]provider.Base
 	if err != nil {
 		var authErr *awsprovider.AuthError
 		if errors.As(err, &authErr) {
-			fmt.Fprintf(w.Out, "Warning: AWS image lookup could not reach SSM: %v\n", err)
+			fmt.Fprintln(w.Out, "Warning: AWS image lookup unavailable; using bundled fallback images.")
 			return fallbackAWSBaseImages(region), nil
 		}
 		return nil, err
@@ -205,7 +205,7 @@ func (w *Wizard) warnOnQuota(ctx context.Context, region string) error {
 	}
 	report, err := w.Provider.CheckGPUQuota(ctx, region, "g5")
 	if err != nil {
-		fmt.Fprintf(w.Out, "Warning: GPU quota check could not run: %v\n", err)
+		fmt.Fprintln(w.Out, "Warning: GPU quota check unavailable; continuing.")
 		return nil
 	}
 	if report.Source == "mock" {
