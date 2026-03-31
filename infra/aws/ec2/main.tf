@@ -44,19 +44,19 @@ data "aws_subnets" "any" {
 }
 
 locals {
-	vpc_id     = length(data.aws_vpcs.default.ids) > 0 ? data.aws_vpcs.default.ids[0] : ""
-	subnet_ids = length(data.aws_subnets.default_for_az.ids) > 0 ? data.aws_subnets.default_for_az.ids : data.aws_subnets.any.ids
-	subnet_id  = length(local.subnet_ids) > 0 ? local.subnet_ids[0] : ""
+  vpc_id     = length(data.aws_vpcs.default.ids) > 0 ? data.aws_vpcs.default.ids[0] : ""
+  subnet_ids = length(data.aws_subnets.default_for_az.ids) > 0 ? data.aws_subnets.default_for_az.ids : data.aws_subnets.any.ids
+  subnet_id  = length(local.subnet_ids) > 0 ? local.subnet_ids[0] : ""
 
   security_group_rules = var.network_mode == "public" && trimspace(var.ssh_cidr) != "" ? [
     "allow tcp/22 from ${trimspace(var.ssh_cidr)}",
-  ] : [
+    ] : [
     "no inbound rules configured",
   ]
 }
 
 resource "aws_key_pair" "this" {
-  key_name   = trimspace(var.ssh_key_name)
+  key_name   = "${trimspace(var.ssh_key_name)}-${random_id.suffix.hex}"
   public_key = trimspace(var.ssh_public_key)
 }
 
@@ -89,12 +89,12 @@ resource "aws_security_group" "this" {
 }
 
 resource "aws_instance" "this" {
-	ami                         = var.image_id
-	instance_type               = var.instance_type
-	key_name                    = aws_key_pair.this.key_name
-	subnet_id                   = local.subnet_id
-	associate_public_ip_address = var.network_mode == "public"
-	vpc_security_group_ids      = [aws_security_group.this.id]
+  ami                         = var.image_id
+  instance_type               = var.instance_type
+  key_name                    = aws_key_pair.this.key_name
+  subnet_id                   = local.subnet_id
+  associate_public_ip_address = var.network_mode == "public"
+  vpc_security_group_ids      = [aws_security_group.this.id]
 
   root_block_device {
     volume_size           = var.disk_size_gb

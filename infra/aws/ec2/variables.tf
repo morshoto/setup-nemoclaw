@@ -23,13 +23,13 @@ variable "image_id" {
 }
 
 variable "ssh_key_name" {
-	type    = string
-	default = ""
+  type    = string
+  default = ""
 }
 
 variable "ssh_public_key" {
-	type    = string
-	default = ""
+  type    = string
+  default = ""
 }
 
 variable "ssh_cidr" {
