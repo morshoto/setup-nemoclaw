@@ -78,7 +78,7 @@ func newAuthCheckCommand(app *App) *cobra.Command {
 		Use:   "check",
 		Short: "Verify AWS credentials and API access",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			status, err := newAWSProvider(app.opts.Profile, "").AuthCheck(cmd.Context())
+			status, err := newAWSProvider(app.opts.Profile, "").CheckAuth(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -224,7 +224,7 @@ func newQuotaCheckCommand(app *App) *cobra.Command {
 			}
 
 			provider := newAWSProvider(app.opts.Profile, "")
-			if _, err := provider.AuthCheck(cmd.Context()); err != nil {
+			if _, err := provider.CheckAuth(cmd.Context()); err != nil {
 				return err
 			}
 			report, err := provider.CheckGPUQuota(cmd.Context(), region, instanceFamily)

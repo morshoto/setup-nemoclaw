@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -49,7 +50,7 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 	}
 	if w.Provider != nil {
 		authCtx, cancel := bestEffortAWSContext(ctx)
-		if _, err := w.Provider.AuthCheck(authCtx); err != nil {
+		if _, err := w.Provider.CheckAuth(authCtx); err != nil {
 			cancel()
 			var authErr *awsprovider.AuthError
 			if errors.As(err, &authErr) {
@@ -78,7 +79,7 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 		return nil, err
 	}
 
-	instanceTypes, err := w.listInstanceTypes(ctx, region)
+	instanceTypes, err := w.listInstanceTypes(ctx, region, computeClass)
 	if err != nil {
 		return nil, err
 	}
@@ -107,6 +108,39 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 		return nil, err
 	}
 
+	sshKeyName := ""
+	sshPrivateKeyPath := ""
+	sshCIDR := ""
+	sshUser := ""
+	if w.Existing != nil {
+		sshKeyName = strings.TrimSpace(w.Existing.SSH.KeyName)
+		sshPrivateKeyPath = strings.TrimSpace(w.Existing.SSH.PrivateKeyPath)
+		sshCIDR = strings.TrimSpace(w.Existing.SSH.CIDR)
+		sshUser = strings.TrimSpace(w.Existing.SSH.User)
+	}
+	if networkMode == "public" {
+		sshKeyName, err = w.Prompter.Text("SSH key pair name", sshKeyName)
+		if err != nil {
+			return nil, err
+		}
+		sshPrivateKeyPath, err = w.Prompter.Text("SSH private key path", sshPrivateKeyPath)
+		if err != nil {
+			return nil, err
+		}
+		sshCIDR, err = w.Prompter.Text("SSH CIDR", sshCIDR)
+		if err != nil {
+			return nil, err
+		}
+		sshUserDefault := sshUser
+		if sshUserDefault == "" {
+			sshUserDefault = sshUsernameForImage(image.Name, image.ID)
+		}
+		sshUser, err = w.Prompter.Text("SSH user", sshUserDefault)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	useNemoClaw, err := w.Prompter.Confirm("Use NemoClaw", true)
 	if err != nil {
 		return nil, err
@@ -126,9 +160,19 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 		Platform: config.PlatformConfig{Name: platform},
 		Compute:  config.ComputeConfig{Class: computeClass},
 		Region:   config.RegionConfig{Name: region},
-		Instance: config.InstanceConfig{Type: instanceType, DiskSizeGB: diskSize},
+		Instance: config.InstanceConfig{Type: instanceType, DiskSizeGB: diskSize, NetworkMode: networkMode},
 		Image:    config.ImageConfig{Name: image.Name, ID: image.ID},
 		Runtime:  config.RuntimeConfig{Endpoint: nimEndpoint, Model: model},
+		SSH: config.SSHConfig{
+			KeyName:       sshKeyName,
+			PrivateKeyPath: sshPrivateKeyPath,
+			CIDR:          sshCIDR,
+			User:          sshUser,
+		},
+		Infra: config.InfraConfig{
+			Backend:   "terraform",
+			ModuleDir: filepath.Join("infra", "aws", "ec2"),
+		},
 		Sandbox: config.SandboxConfig{
 			Enabled:     true,
 			NetworkMode: networkMode,
@@ -148,6 +192,20 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 	}
 	fmt.Fprintf(w.Out, "disk size: %d GB\n", cfg.Instance.DiskSizeGB)
 	fmt.Fprintf(w.Out, "network mode: %s\n", cfg.Sandbox.NetworkMode)
+	if strings.TrimSpace(cfg.SSH.KeyName) != "" {
+		fmt.Fprintf(w.Out, "ssh key pair: %s\n", cfg.SSH.KeyName)
+	}
+	if strings.TrimSpace(cfg.SSH.PrivateKeyPath) != "" {
+		fmt.Fprintf(w.Out, "ssh private key: %s\n", cfg.SSH.PrivateKeyPath)
+	}
+	if strings.TrimSpace(cfg.SSH.CIDR) != "" {
+		fmt.Fprintf(w.Out, "ssh cidr: %s\n", cfg.SSH.CIDR)
+	}
+	if strings.TrimSpace(cfg.SSH.User) != "" {
+		fmt.Fprintf(w.Out, "ssh user: %s\n", cfg.SSH.User)
+	}
+	fmt.Fprintf(w.Out, "infra backend: %s\n", cfg.Infra.Backend)
+	fmt.Fprintf(w.Out, "terraform module: %s\n", cfg.Infra.ModuleDir)
 	fmt.Fprintf(w.Out, "use NemoClaw: %t\n", cfg.Sandbox.UseNemoClaw)
 	fmt.Fprintf(w.Out, "NIM endpoint: %s\n", cfg.Runtime.Endpoint)
 	fmt.Fprintf(w.Out, "model: %s\n", cfg.Runtime.Model)
@@ -170,11 +228,14 @@ func (w *Wizard) listRegions(ctx context.Context) ([]string, error) {
 	return w.Provider.ListRegions(ctx)
 }
 
-func (w *Wizard) listInstanceTypes(ctx context.Context, region string) ([]string, error) {
+func (w *Wizard) listInstanceTypes(ctx context.Context, region, computeClass string) ([]string, error) {
 	if w.Provider == nil {
-		return []string{"g5.xlarge", "g4dn.xlarge", "t3.medium"}, nil
+		if config.EffectiveComputeClass(computeClass) == config.ComputeClassCPU {
+			return []string{"t3.xlarge", "t3.2xlarge", "t3.medium"}, nil
+		}
+		return []string{"g5.xlarge", "g4dn.xlarge", "g6.xlarge"}, nil
 	}
-	items, err := w.Provider.ListInstanceTypes(ctx, region)
+	items, err := w.Provider.RecommendInstanceTypes(ctx, region, computeClass)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +255,7 @@ func (w *Wizard) listImages(ctx context.Context, region, computeClass string) ([
 	}
 	imageCtx, cancel := bestEffortAWSContext(ctx)
 	defer cancel()
-	items, err := w.Provider.ListBaseImages(imageCtx, region)
+	items, err := w.Provider.RecommendBaseImages(imageCtx, region, computeClass)
 	if err != nil {
 		return nil, err
 	}
@@ -276,10 +337,7 @@ func defaultInstanceType(computeClass string) string {
 }
 
 func defaultNetworkMode(computeClass string) string {
-	if config.EffectiveComputeClass(computeClass) == config.ComputeClassCPU {
-		return "public"
-	}
-	return "private"
+	return "public"
 }
 
 func defaultEndpoint(computeClass string) string {

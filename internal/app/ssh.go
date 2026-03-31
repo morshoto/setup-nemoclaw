@@ -29,6 +29,15 @@ func resolveSSHCIDR(ctx context.Context, sshKeyName, sshCIDR string) (string, er
 	return normalizeSSHCIDR(detected)
 }
 
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
 func defaultDetectSSHCIDR(ctx context.Context) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.ipify.org", nil)
 	if err != nil {

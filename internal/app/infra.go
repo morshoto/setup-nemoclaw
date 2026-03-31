@@ -28,7 +28,7 @@ func newInfraCreateCommand(app *App) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "create",
-		Short: "Create an EC2 instance from the current configuration",
+		Short: "Create AWS infrastructure with Terraform",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if strings.TrimSpace(app.opts.ConfigPath) == "" {
 				return errors.New("config file is required: pass --config <path>")
@@ -41,18 +41,20 @@ func newInfraCreateCommand(app *App) *cobra.Command {
 			if err := validateInfraConfig(cfg); err != nil {
 				return err
 			}
-			if err := validateInfraCreateFlags(sshKeyName, sshCIDR); err != nil {
-				return err
-			}
-			sshCIDR, err = resolveSSHCIDR(cmd.Context(), sshKeyName, sshCIDR)
-			if err != nil {
+			effectiveSSHKeyName := firstNonEmpty(sshKeyName, cfg.SSH.KeyName)
+			effectiveSSHCIDR := firstNonEmpty(sshCIDR, cfg.SSH.CIDR)
+			effectiveSSHKey := firstNonEmpty(cfg.SSH.PrivateKeyPath)
+			if err := validateInfraCreateFlags(cfg, effectiveSSHKeyName, effectiveSSHCIDR, effectiveSSHKey); err != nil {
 				return err
 			}
 
 			logger := loggerFromContext(cmd.Context())
 			logger.Info("starting infra create")
-			fmt.Fprintln(cmd.OutOrStdout(), "creating infrastructure...")
-			instance, err := runInfraCreate(cmd.Context(), app.opts.Profile, cfg, sshKeyName, sshCIDR)
+			fmt.Fprintln(cmd.OutOrStdout(), "creating infrastructure with Terraform...")
+			instance, err := runInfraCreate(cmd.Context(), app.opts.Profile, cfg, createOptions{
+				SSHKeyName: effectiveSSHKeyName,
+				SSHCIDR:    effectiveSSHCIDR,
+			})
 			printCreatedInstance(cmd.OutOrStdout(), instance)
 			if instance != nil {
 				printSuccessNextSteps(cmd.OutOrStdout(), app.opts.ConfigPath, instanceTarget(instance), true)
@@ -71,7 +73,7 @@ func newInfraCreateCommand(app *App) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&sshKeyName, "ssh-key-name", "", "SSH key pair name to attach to the instance")
-	cmd.Flags().StringVar(&sshCIDR, "ssh-cidr", "", "CIDR allowed to reach port 22 when SSH access is configured; auto-detected from your public IP when omitted")
+	cmd.Flags().StringVar(&sshCIDR, "ssh-cidr", "", "CIDR allowed to reach port 22; auto-detected from your public IP when omitted")
 	return cmd
 }
 
@@ -103,18 +105,29 @@ func validateInfraConfig(cfg *config.Config) error {
 	if strings.TrimSpace(cfg.Image.ID) == "" && strings.TrimSpace(cfg.Image.Name) == "" {
 		v.Add("image.name", "or image.id is required")
 	}
-	if mode := strings.TrimSpace(cfg.Sandbox.NetworkMode); mode != "" && mode != "public" && mode != "private" {
+	if mode := config.EffectiveNetworkMode(cfg); mode != "" && mode != "public" && mode != "private" {
 		v.Add("sandbox.network_mode", "must be public or private")
+	}
+	if cfg.Infra.Backend != "" && strings.ToLower(strings.TrimSpace(cfg.Infra.Backend)) != "terraform" {
+		v.Add("infra.backend", "must be terraform")
 	}
 	return v.OrNil()
 }
 
-func validateInfraCreateFlags(sshKeyName, sshCIDR string) error {
+func validateInfraCreateFlags(cfg *config.Config, sshKeyName, sshCIDR, sshKeyPath string) error {
 	sshKeyName = strings.TrimSpace(sshKeyName)
 	sshCIDR = strings.TrimSpace(sshCIDR)
+	sshKeyPath = strings.TrimSpace(sshKeyPath)
+	networkMode := config.EffectiveNetworkMode(cfg)
 	switch {
+	case networkMode == "private":
+		return errors.New("private networking is not supported yet; use public networking or add an SSM/bastion executor")
 	case sshKeyName == "" && sshCIDR != "":
 		return errors.New("ssh-key-name is required when ssh-cidr is set")
+	case sshKeyName == "":
+		return errors.New("ssh-key-name is required for public networking; set ssh.key_name or pass --ssh-key-name")
+	case sshKeyPath == "":
+		return errors.New("ssh private key path is required for public networking; set ssh.private_key_path or pass --ssh-key")
 	default:
 		return nil
 	}
@@ -139,7 +152,7 @@ func resolveInfraImage(ctx context.Context, prov provider.CloudProvider, cfg *co
 		return provider.BaseImage{}, fmt.Errorf("resolve image %q: provider is unavailable", imageName)
 	}
 
-	images, err := prov.ListBaseImages(ctx, cfg.Region.Name)
+	images, err := prov.RecommendBaseImages(ctx, cfg.Region.Name, cfg.Compute.Class)
 	if err != nil {
 		return provider.BaseImage{}, fmt.Errorf("resolve image %q: %w", imageName, err)
 	}
@@ -156,16 +169,6 @@ func resolveInfraImage(ctx context.Context, prov provider.CloudProvider, cfg *co
 		}
 	}
 	return provider.BaseImage{}, fmt.Errorf("resolve image %q: no matching base image found", imageName)
-}
-
-func connectionMethodFor(sshKeyName, networkMode string) string {
-	if strings.TrimSpace(sshKeyName) != "" {
-		return "ssh"
-	}
-	if strings.TrimSpace(networkMode) == "private" {
-		return "private-ip"
-	}
-	return "public-ip"
 }
 
 func printCreatedInstance(out io.Writer, instance *provider.Instance) {
