@@ -27,6 +27,12 @@ var newSSHExecutor = func(cfg host.SSHConfig) host.Executor {
 	return host.NewSSHExecutor(cfg)
 }
 
+var (
+	defaultSSHReadyTimeout     = 5 * time.Minute
+	defaultSSHReadyInitialWait = 2 * time.Second
+	defaultSSHReadyMaxWait     = 10 * time.Second
+)
+
 type installOptions struct {
 	Target            string
 	SSHUser           string
@@ -202,6 +208,9 @@ func runInstallWorkflow(ctx context.Context, profile string, cfg *config.Config,
 		IdentityFile:   keyPath,
 		ConnectTimeout: 15 * time.Second,
 	})
+	if err := waitForSSHReady(ctx, exec, resolvedTarget); err != nil {
+		return runtimeinstall.Result{}, "", err
+	}
 
 	useNemo := cfg.Sandbox.UseNemoClaw
 	if opts.UseNemoClaw {
@@ -253,6 +262,9 @@ func runVerifyWorkflow(ctx context.Context, profile string, cfg *config.Config, 
 		IdentityFile:   keyPath,
 		ConnectTimeout: 15 * time.Second,
 	})
+	if err := waitForSSHReady(ctx, exec, resolvedTarget); err != nil {
+		return verify.Report{}, "", err
+	}
 
 	report, err := verify.Verifier{Host: exec}.Verify(ctx, verify.Request{
 		Config:            cfg,
@@ -400,6 +412,55 @@ func resolveInstallSSH(cfg *config.Config, userFlag, keyFlag string) (string, st
 		return "", "", fmt.Errorf("ssh private key %q does not exist; pass --ssh-key or update ssh.private_key_path", resolved)
 	}
 	return user, resolved, nil
+}
+
+func waitForSSHReady(ctx context.Context, exec host.Executor, target string) error {
+	waitCtx := ctx
+	var cancel context.CancelFunc
+	if _, ok := ctx.Deadline(); !ok {
+		waitCtx, cancel = context.WithTimeout(ctx, defaultSSHReadyTimeout)
+		defer cancel()
+	}
+
+	delay := defaultSSHReadyInitialWait
+	for {
+		_, err := exec.Run(waitCtx, "true")
+		if err == nil {
+			return nil
+		}
+		if !isTransientSSHError(err) {
+			return fmt.Errorf("wait for ssh readiness on %s: %w", target, err)
+		}
+		if waitCtx.Err() != nil {
+			return fmt.Errorf("wait for ssh readiness on %s: %w", target, err)
+		}
+
+		timer := time.NewTimer(delay)
+		select {
+		case <-waitCtx.Done():
+			timer.Stop()
+			return fmt.Errorf("wait for ssh readiness on %s: %w", target, waitCtx.Err())
+		case <-timer.C:
+		}
+
+		delay *= 2
+		if delay > defaultSSHReadyMaxWait {
+			delay = defaultSSHReadyMaxWait
+		}
+	}
+}
+
+func isTransientSSHError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, fragment := range []string{"connection refused", "connection timed out", "operation timed out"} {
+		if strings.Contains(msg, fragment) {
+			return true
+		}
+	}
+	return false
 }
 
 func prepareTerraformWorkdir() (string, error) {

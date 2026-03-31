@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"openclaw/internal/config"
 	"openclaw/internal/host"
@@ -307,6 +308,7 @@ func TestInstallCommandRunsWorkflowAgainstResolvedInstance(t *testing.T) {
 	newSSHExecutor = func(cfg host.SSHConfig) host.Executor {
 		return fakeSSHExecutor{
 			results: map[string]host.CommandResult{
+				"true":          {},
 				"nvidia-smi -L": {Stdout: "GPU 0: demo"},
 				"docker info":   {Stdout: "Docker Engine"},
 				"docker info --format {{json .Runtimes}}":                                                {Stdout: `{"nvidia":{}}`},
@@ -377,6 +379,8 @@ func TestVerifyCommandReportsSuccess(t *testing.T) {
 		return flexibleExecutor{
 			run: func(command string, args ...string) (host.CommandResult, error) {
 				switch {
+				case command == "true" && len(args) == 0:
+					return host.CommandResult{}, nil
 				case command == "nvidia-smi" && strings.Join(args, " ") == "-L":
 					return host.CommandResult{Stdout: "GPU 0: demo"}, nil
 				case command == "docker" && strings.Join(args, " ") == "info":
@@ -433,6 +437,41 @@ runtime:
 	}
 }
 
+func TestWaitForSSHReadyRetriesTransientErrors(t *testing.T) {
+	originalTimeout := defaultSSHReadyTimeout
+	originalInitialWait := defaultSSHReadyInitialWait
+	originalMaxWait := defaultSSHReadyMaxWait
+	defaultSSHReadyTimeout = 500 * time.Millisecond
+	defaultSSHReadyInitialWait = 10 * time.Millisecond
+	defaultSSHReadyMaxWait = 10 * time.Millisecond
+	defer func() {
+		defaultSSHReadyTimeout = originalTimeout
+		defaultSSHReadyInitialWait = originalInitialWait
+		defaultSSHReadyMaxWait = originalMaxWait
+	}()
+
+	attempts := 0
+	exec := flexibleExecutor{
+		run: func(command string, args ...string) (host.CommandResult, error) {
+			if command != "true" || len(args) != 0 {
+				return host.CommandResult{}, errors.New("unexpected command: " + command + " " + strings.Join(args, " "))
+			}
+			attempts++
+			if attempts < 2 {
+				return host.CommandResult{}, errors.New("ssh connection refused")
+			}
+			return host.CommandResult{}, nil
+		},
+	}
+
+	if err := waitForSSHReady(context.Background(), exec, "203.0.113.10"); err != nil {
+		t.Fatalf("waitForSSHReady() error = %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+}
+
 func TestCreateCommandRunsEndToEndWorkflow(t *testing.T) {
 	restore := stubAWSProviderFactory()
 	defer restore()
@@ -470,6 +509,8 @@ func TestCreateCommandRunsEndToEndWorkflow(t *testing.T) {
 			run: func(command string, args ...string) (host.CommandResult, error) {
 				key := command + " " + strings.Join(args, " ")
 				switch {
+				case strings.TrimSpace(key) == "true":
+					return host.CommandResult{}, nil
 				case key == "nvidia-smi -L":
 					return host.CommandResult{Stdout: "GPU 0: demo"}, nil
 				case key == "docker info":
