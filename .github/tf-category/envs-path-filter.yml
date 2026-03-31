@@ -1,0 +1,5 @@
+prod:
+  - 'terraform/envs/prod/**'
+
+stg:
+  - 'terraform/envs/stg/**'

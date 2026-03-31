@@ -1,0 +1,49 @@
+name: '✨ New Feature Proposal'
+description: 'Suggest a new feature for the project. Please provide as much detail as possible to help us understand and evaluate your suggestion.'
+title: '✨ '
+labels:
+    - 'Type: New Feature'
+    - 'Feedback: Feature Request'
+body:
+    - type: textarea
+      id: summary
+      attributes:
+          label: 'Summary'
+          description: 'A brief description of the feature'
+          placeholder: 'Example: I want to add a snooze feature for user notifications'
+      validations:
+          required: true
+
+    - type: textarea
+      id: acceptance
+      attributes:
+          label: 'Acceptance Criteria'
+          description: 'Please list the acceptance criteria for this feature'
+          placeholder: "- [ ] ...\n- [ ] ..."
+      validations:
+          required: false
+
+    - type: textarea
+      id: impact
+      attributes:
+          label: 'Impact Scope'
+          description: 'If applicable, please specify the areas or teams that will be affected'
+      validations:
+          required: false
+
+    - type: textarea
+      id: links
+      attributes:
+          label: 'Related Links'
+          description: 'Links to related issues, PRs, or documentation'
+      validations:
+          required: false
+
+    - type: textarea
+      id: screenshots
+      attributes:
+          label: 'Screenshots'
+          description: 'Attach screenshots or .gif files to help illustrate the feature'
+          placeholder: 'Drag and drop images here'
+      validations:
+          required: false

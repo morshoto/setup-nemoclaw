@@ -1,0 +1,22 @@
+name: '♻️ Improvement / Refactor'
+description: 'Suggest an improvement or refactor for the project. Please provide as much detail as possible to help us understand and evaluate your suggestion.'
+title: '♻️ '
+labels:
+    - 'Type: Improvement'
+body:
+    - type: textarea
+      id: summary
+      attributes:
+          label: 'Summary'
+          description: "A brief description of the improvement\n - Current issue\n - Proposed solution\n - Anticipated risks/impacts"
+          placeholder: 'Example: I want to reduce the execution time of the batch process'
+      validations:
+          required: true
+
+    - type: textarea
+      id: links
+      attributes:
+          label: 'Related Links'
+          description: 'Links to related issues, PRs, or documentation'
+      validations:
+          required: false

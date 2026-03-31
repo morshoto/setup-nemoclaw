@@ -1,0 +1,48 @@
+name: '🔥 Bug Report'
+description: 'Report a bug in the project. Please provide as much detail as possible to help us understand and fix the issue.'
+title: '🔥 '
+labels:
+    - 'Problem: Bug'
+body:
+    - type: textarea
+      id: summary
+      attributes:
+          label: 'Summary'
+          description: 'A brief description of the bug'
+          placeholder: 'Example: Dashboard appears blank after login'
+      validations:
+          required: true
+
+    - type: textarea
+      id: steps
+      attributes:
+          label: 'Reproduction Steps'
+          description: 'Please provide a numbered list of steps to reproduce the issue'
+          placeholder: "1. ...\n2. ...\n3. ..."
+      validations:
+          required: false
+
+    - type: textarea
+      id: expected
+      attributes:
+          label: 'Expected Behavior'
+          description: 'What should happen instead'
+      validations:
+          required: true
+
+    - type: textarea
+      id: links
+      attributes:
+          label: 'Related Links'
+          description: 'Links to related issues, PRs, or documentation'
+      validations:
+          required: false
+
+    - type: textarea
+      id: screenshots
+      attributes:
+          label: 'Screenshots'
+          description: 'Attach screenshots or .gif files to help illustrate the issue'
+          placeholder: 'Drag and drop images here'
+      validations:
+          required: false

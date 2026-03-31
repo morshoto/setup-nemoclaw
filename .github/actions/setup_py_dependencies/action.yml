@@ -1,0 +1,49 @@
+name: Setup the Python dependencies
+description: This composite run steps require the dependencies cache before running.
+inputs:
+  python-version:
+    description: Python version to use.
+    required: true
+  target-directory:
+    description: Target directory to change into
+    required: false
+    default: backend
+  auth_method:
+    description: Optional auth method for Python package registry
+    required: false
+    default: ""
+  workload_identity_provider:
+    description: Optional GCP workload identity provider
+    required: false
+    default: ""
+  service_account:
+    description: Optional GCP service account email
+    required: false
+    default: ""
+  ar_simple_index_url:
+    description: Optional Artifact Registry simple index URL
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Authenticate to Google Cloud for package install
+      if: ${{ inputs.auth_method == 'wif' && inputs.workload_identity_provider != '' && inputs.service_account != '' }}
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ inputs.workload_identity_provider }}
+        service_account: ${{ inputs.service_account }}
+    - name: Set the Python version
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ inputs.python-version }}
+    - name: Set pip extra index url
+      if: ${{ inputs.ar_simple_index_url != '' && (inputs.auth_method != 'wif' || (inputs.workload_identity_provider != '' && inputs.service_account != '')) }}
+      run: echo "PIP_EXTRA_INDEX_URL=${{ inputs.ar_simple_index_url }}" >> "$GITHUB_ENV"
+      shell: bash
+    - name: Install Python dependencies
+      env:
+        PIP_NO_INPUT: "1"
+      run: pip install -r requirements.txt
+      shell: bash
+      working-directory: ${{ inputs.target-directory }}
