@@ -52,3 +52,31 @@ func TestSessionConfirmAndTextAndInt(t *testing.T) {
 		t.Fatal("expected prompts to be written")
 	}
 }
+
+func TestSessionReadMenuKeyParsesArrowsAndDigits(t *testing.T) {
+	session := NewSession(strings.NewReader("\x1b[A\x1b[B2"), &bytes.Buffer{})
+
+	key, err := session.readMenuKey()
+	if err != nil {
+		t.Fatalf("readMenuKey() error = %v", err)
+	}
+	if key.kind != menuKeyUp {
+		t.Fatalf("first key kind = %d, want up", key.kind)
+	}
+
+	key, err = session.readMenuKey()
+	if err != nil {
+		t.Fatalf("readMenuKey() error = %v", err)
+	}
+	if key.kind != menuKeyDown {
+		t.Fatalf("second key kind = %d, want down", key.kind)
+	}
+
+	key, err = session.readMenuKey()
+	if err != nil {
+		t.Fatalf("readMenuKey() error = %v", err)
+	}
+	if key.kind != menuKeyDigit || key.index != 1 {
+		t.Fatalf("third key = %+v, want digit index 1", key)
+	}
+}

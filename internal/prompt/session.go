@@ -2,15 +2,21 @@ package prompt
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 )
 
+var errCursorMenuUnavailable = errors.New("cursor menu unavailable")
+
 type Session struct {
 	in          *bufio.Reader
 	out         io.Writer
+	inFile      *os.File
+	outFile     *os.File
 	Interactive bool
 }
 
@@ -21,9 +27,19 @@ func NewSession(in io.Reader, out io.Writer) *Session {
 	if out == nil {
 		out = io.Discard
 	}
+	var inFile *os.File
+	if f, ok := in.(*os.File); ok {
+		inFile = f
+	}
+	var outFile *os.File
+	if f, ok := out.(*os.File); ok {
+		outFile = f
+	}
 	return &Session{
 		in:          bufio.NewReader(in),
 		out:         out,
+		inFile:      inFile,
+		outFile:     outFile,
 		Interactive: true,
 	}
 }
@@ -36,6 +52,20 @@ func (s *Session) Select(label string, options []string, defaultValue string) (s
 		return "", fmt.Errorf("%s: no options available", label)
 	}
 
+	if s.canUseCursorMenu() {
+		selected, err := s.selectWithCursor(label, options, defaultValue)
+		switch {
+		case err == nil:
+			return selected, nil
+		case errors.Is(err, errCursorMenuUnavailable):
+		default:
+			return "", err
+		}
+	}
+	return s.selectWithLine(label, options, defaultValue)
+}
+
+func (s *Session) selectWithLine(label string, options []string, defaultValue string) (string, error) {
 	fmt.Fprintf(s.out, "%s\n", label)
 	for i, option := range options {
 		marker := ""
