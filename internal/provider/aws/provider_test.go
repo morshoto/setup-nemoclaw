@@ -7,12 +7,16 @@ import (
 
 	awsbase "github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/servicequotas"
 	sqtypes "github.com/aws/aws-sdk-go-v2/service/servicequotas/types"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go"
+
+	"openclaw/internal/provider"
 )
 
 func TestAuthCheckReturnsProfileNotFound(t *testing.T) {
@@ -206,6 +210,72 @@ func TestCheckGPUQuotaUsesServiceQuotasUtilizationReport(t *testing.T) {
 	}
 }
 
+func TestCreateInstanceUsesDefaultVpcSubnetAndReturnsMetadata(t *testing.T) {
+	fakeEC2 := &fakeEC2Client{
+		t: t,
+	}
+	p := &Provider{
+		Config: Config{Profile: "test-profile"},
+		loadDefaultConfig: func(ctx context.Context, optFns ...func(*awsconfig.LoadOptions) error) (awsbase.Config, error) {
+			return awsbase.Config{
+				Region:      "us-east-1",
+				Credentials: awsbase.NewCredentialsCache(staticCredentialsProvider{}),
+			}, nil
+		},
+		newEC2Client: func(cfg awsbase.Config) ec2Client {
+			if cfg.Region != "us-east-1" {
+				t.Fatalf("cfg.Region = %q, want us-east-1", cfg.Region)
+			}
+			return fakeEC2
+		},
+	}
+
+	instance, err := p.CreateInstance(context.Background(), provider.CreateInstanceRequest{
+		Region:           "us-east-1",
+		InstanceType:     "g5.xlarge",
+		Image:            "ami-0123456789abcdef0",
+		ImageName:        "AWS Deep Learning AMI GPU Ubuntu 22.04",
+		DiskSizeGB:       40,
+		NetworkMode:      "private",
+		ConnectionMethod: "ssh",
+		SSHKeyName:       "demo-key",
+		SSHCIDR:          "203.0.113.0/24",
+	})
+	if err != nil {
+		t.Fatalf("CreateInstance() error = %v", err)
+	}
+	if instance.ID != "i-0123456789abcdef0" {
+		t.Fatalf("instance.ID = %q", instance.ID)
+	}
+	if instance.Region != "us-east-1" {
+		t.Fatalf("instance.Region = %q", instance.Region)
+	}
+	if instance.PublicIP != "" || instance.PrivateIP != "10.0.0.10" {
+		t.Fatalf("instance IPs = %#v", instance)
+	}
+	if instance.SecurityGroupID != "sg-0123456789abcdef0" {
+		t.Fatalf("instance.SecurityGroupID = %q", instance.SecurityGroupID)
+	}
+	if len(instance.SecurityGroupRules) != 1 || instance.SecurityGroupRules[0] != "allow tcp/22 from 203.0.113.0/24" {
+		t.Fatalf("instance.SecurityGroupRules = %#v", instance.SecurityGroupRules)
+	}
+	if instance.ConnectionInfo != "ssh -i <your-key>.pem ubuntu@10.0.0.10" {
+		t.Fatalf("instance.ConnectionInfo = %q", instance.ConnectionInfo)
+	}
+	if fakeEC2.createSecurityGroupVpcID != "vpc-123" {
+		t.Fatalf("createSecurityGroupVpcID = %q", fakeEC2.createSecurityGroupVpcID)
+	}
+	if fakeEC2.authorizedCIDR != "203.0.113.0/24" {
+		t.Fatalf("authorizedCIDR = %q", fakeEC2.authorizedCIDR)
+	}
+	if fakeEC2.runImageID != "ami-0123456789abcdef0" || fakeEC2.runInstanceType != "g5.xlarge" {
+		t.Fatalf("run launch params = image %q type %q", fakeEC2.runImageID, fakeEC2.runInstanceType)
+	}
+	if fakeEC2.associatePublicIP {
+		t.Fatal("associatePublicIP = true, want false for private networking")
+	}
+}
+
 func mustAuthError(t *testing.T, err error) *AuthError {
 	t.Helper()
 	var authErr *AuthError
@@ -289,4 +359,84 @@ func (f fakeServiceQuotasClient) StartQuotaUtilizationReport(ctx context.Context
 
 func (f fakeServiceQuotasClient) GetQuotaUtilizationReport(ctx context.Context, params *servicequotas.GetQuotaUtilizationReportInput, optFns ...func(*servicequotas.Options)) (*servicequotas.GetQuotaUtilizationReportOutput, error) {
 	return f.getOut, nil
+}
+
+type fakeEC2Client struct {
+	t *testing.T
+
+	createSecurityGroupVpcID string
+	authorizedCIDR           string
+	runImageID               string
+	runInstanceType          string
+	associatePublicIP        bool
+}
+
+func (f *fakeEC2Client) CreateSecurityGroup(ctx context.Context, params *ec2.CreateSecurityGroupInput, optFns ...func(*ec2.Options)) (*ec2.CreateSecurityGroupOutput, error) {
+	if params == nil || params.VpcId == nil || *params.VpcId != "vpc-123" {
+		f.t.Fatalf("CreateSecurityGroup VpcId = %#v, want vpc-123", params)
+	}
+	f.createSecurityGroupVpcID = awsbase.ToString(params.VpcId)
+	return &ec2.CreateSecurityGroupOutput{GroupId: awsbase.String("sg-0123456789abcdef0")}, nil
+}
+
+func (f *fakeEC2Client) AuthorizeSecurityGroupIngress(ctx context.Context, params *ec2.AuthorizeSecurityGroupIngressInput, optFns ...func(*ec2.Options)) (*ec2.AuthorizeSecurityGroupIngressOutput, error) {
+	if params == nil || params.GroupId == nil || *params.GroupId != "sg-0123456789abcdef0" {
+		f.t.Fatalf("AuthorizeSecurityGroupIngress GroupId = %#v, want sg-0123456789abcdef0", params)
+	}
+	if len(params.IpPermissions) != 1 || len(params.IpPermissions[0].IpRanges) != 1 {
+		f.t.Fatalf("AuthorizeSecurityGroupIngress IpPermissions = %#v", params.IpPermissions)
+	}
+	f.authorizedCIDR = awsbase.ToString(params.IpPermissions[0].IpRanges[0].CidrIp)
+	return &ec2.AuthorizeSecurityGroupIngressOutput{}, nil
+}
+
+func (f *fakeEC2Client) DeleteSecurityGroup(ctx context.Context, params *ec2.DeleteSecurityGroupInput, optFns ...func(*ec2.Options)) (*ec2.DeleteSecurityGroupOutput, error) {
+	return &ec2.DeleteSecurityGroupOutput{}, nil
+}
+
+func (f *fakeEC2Client) DescribeVpcs(ctx context.Context, params *ec2.DescribeVpcsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVpcsOutput, error) {
+	return &ec2.DescribeVpcsOutput{
+		Vpcs: []ec2types.Vpc{{VpcId: awsbase.String("vpc-123")}},
+	}, nil
+}
+
+func (f *fakeEC2Client) DescribeSubnets(ctx context.Context, params *ec2.DescribeSubnetsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeSubnetsOutput, error) {
+	return &ec2.DescribeSubnetsOutput{
+		Subnets: []ec2types.Subnet{{SubnetId: awsbase.String("subnet-123")}},
+	}, nil
+}
+
+func (f *fakeEC2Client) RunInstances(ctx context.Context, params *ec2.RunInstancesInput, optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error) {
+	if params == nil {
+		f.t.Fatal("RunInstances params = nil")
+	}
+	f.runImageID = awsbase.ToString(params.ImageId)
+	f.runInstanceType = string(params.InstanceType)
+	if len(params.NetworkInterfaces) != 1 {
+		f.t.Fatalf("RunInstances NetworkInterfaces = %#v", params.NetworkInterfaces)
+	}
+	f.associatePublicIP = awsbase.ToBool(params.NetworkInterfaces[0].AssociatePublicIpAddress)
+	return &ec2.RunInstancesOutput{
+		Instances: []ec2types.Instance{{
+			InstanceId: awsbase.String("i-0123456789abcdef0"),
+			State:      &ec2types.InstanceState{Name: ec2types.InstanceStateNameRunning},
+		}},
+	}, nil
+}
+
+func (f *fakeEC2Client) DescribeInstances(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+	publicIP := awsbase.String("")
+	if f.associatePublicIP {
+		publicIP = awsbase.String("203.0.113.10")
+	}
+	return &ec2.DescribeInstancesOutput{
+		Reservations: []ec2types.Reservation{{
+			Instances: []ec2types.Instance{{
+				InstanceId:       awsbase.String("i-0123456789abcdef0"),
+				PublicIpAddress:  publicIP,
+				PrivateIpAddress: awsbase.String("10.0.0.10"),
+				State:            &ec2types.InstanceState{Name: ec2types.InstanceStateNameRunning},
+			}},
+		}},
+	}, nil
 }

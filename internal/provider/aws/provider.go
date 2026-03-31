@@ -409,7 +409,7 @@ func buildConnectionInfo(req provider.CreateInstanceRequest, publicIP, privateIP
 		if strings.TrimSpace(req.SSHCIDR) == "" {
 			return "ssh key configured but no inbound SSH CIDR set"
 		}
-		user := sshUsernameForImage(req.Image)
+		user := sshUsernameForImage(req.ImageName, req.Image)
 		if key := strings.TrimSpace(req.SSHKeyName); key != "" {
 			return fmt.Sprintf("ssh -i <your-key>.pem %s@%s", user, targetIP)
 		}
@@ -430,8 +430,8 @@ func buildConnectionInfo(req provider.CreateInstanceRequest, publicIP, privateIP
 	}
 }
 
-func sshUsernameForImage(imageID string) string {
-	lower := strings.ToLower(imageID)
+func sshUsernameForImage(imageName, imageID string) string {
+	lower := strings.ToLower(strings.TrimSpace(imageName) + " " + strings.TrimSpace(imageID))
 	if strings.Contains(lower, "ubuntu") {
 		return "ubuntu"
 	}

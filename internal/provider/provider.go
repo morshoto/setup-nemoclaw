@@ -59,6 +59,7 @@ type CreateInstanceRequest struct {
 	Region           string
 	InstanceType     string
 	Image            string
+	ImageName        string
 	DiskSizeGB       int
 	NetworkMode      string
 	ConnectionMethod string

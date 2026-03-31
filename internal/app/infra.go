@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -40,12 +41,20 @@ func newInfraCreateCommand(app *App) *cobra.Command {
 			if err := validateInfraConfig(cfg); err != nil {
 				return err
 			}
+			if err := validateInfraCreateFlags(sshKeyName, sshCIDR); err != nil {
+				return err
+			}
 
 			prov := newAWSProvider(app.opts.Profile)
+			image, err := resolveInfraImage(cmd.Context(), prov, cfg)
+			if err != nil {
+				return err
+			}
 			req := provider.CreateInstanceRequest{
 				Region:           cfg.Region.Name,
 				InstanceType:     cfg.Instance.Type,
-				Image:            cfg.Image.ID,
+				Image:            image.ID,
+				ImageName:        image.Name,
 				DiskSizeGB:       cfg.Instance.DiskSizeGB,
 				NetworkMode:      cfg.Sandbox.NetworkMode,
 				ConnectionMethod: connectionMethodFor(sshKeyName, cfg.Sandbox.NetworkMode),
@@ -90,13 +99,64 @@ func validateInfraConfig(cfg *config.Config) error {
 	if cfg.Instance.DiskSizeGB <= 0 {
 		v.Add("instance.disk_size_gb", "must be greater than 0")
 	}
-	if strings.TrimSpace(cfg.Image.ID) == "" {
-		v.Add("image.id", "is required")
+	if strings.TrimSpace(cfg.Image.ID) == "" && strings.TrimSpace(cfg.Image.Name) == "" {
+		v.Add("image.name", "or image.id is required")
 	}
 	if mode := strings.TrimSpace(cfg.Sandbox.NetworkMode); mode != "" && mode != "public" && mode != "private" {
 		v.Add("sandbox.network_mode", "must be public or private")
 	}
 	return v.OrNil()
+}
+
+func validateInfraCreateFlags(sshKeyName, sshCIDR string) error {
+	sshKeyName = strings.TrimSpace(sshKeyName)
+	sshCIDR = strings.TrimSpace(sshCIDR)
+	switch {
+	case sshKeyName != "" && sshCIDR == "":
+		return errors.New("ssh-cidr is required when ssh-key-name is set")
+	case sshKeyName == "" && sshCIDR != "":
+		return errors.New("ssh-key-name is required when ssh-cidr is set")
+	default:
+		return nil
+	}
+}
+
+func resolveInfraImage(ctx context.Context, prov provider.CloudProvider, cfg *config.Config) (provider.BaseImage, error) {
+	if cfg == nil {
+		return provider.BaseImage{}, errors.New("config is nil")
+	}
+	if imageID := strings.TrimSpace(cfg.Image.ID); imageID != "" {
+		return provider.BaseImage{
+			ID:   imageID,
+			Name: cfg.Image.Name,
+		}, nil
+	}
+
+	imageName := strings.TrimSpace(cfg.Image.Name)
+	if imageName == "" {
+		return provider.BaseImage{}, errors.New("image name or image id is required")
+	}
+	if prov == nil {
+		return provider.BaseImage{}, fmt.Errorf("resolve image %q: provider is unavailable", imageName)
+	}
+
+	images, err := prov.ListBaseImages(ctx, cfg.Region.Name)
+	if err != nil {
+		return provider.BaseImage{}, fmt.Errorf("resolve image %q: %w", imageName, err)
+	}
+	if len(images) == 0 {
+		return provider.BaseImage{}, fmt.Errorf("resolve image %q: no base images available", imageName)
+	}
+	if len(images) == 1 {
+		return images[0], nil
+	}
+
+	for _, image := range images {
+		if strings.EqualFold(strings.TrimSpace(image.Name), imageName) || strings.EqualFold(strings.TrimSpace(image.ID), imageName) {
+			return image, nil
+		}
+	}
+	return provider.BaseImage{}, fmt.Errorf("resolve image %q: no matching base image found", imageName)
 }
 
 func connectionMethodFor(sshKeyName, networkMode string) string {
