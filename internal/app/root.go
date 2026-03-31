@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -71,6 +73,9 @@ func newConfigValidateCommand(app *App) *cobra.Command {
 		Use:   "validate",
 		Short: "Validate a configuration file",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(app.opts.ConfigPath) == "" {
+				return errors.New("config file is required: pass --config <path>")
+			}
 			cfg, err := config.Load(app.opts.ConfigPath)
 			if err != nil {
 				return err

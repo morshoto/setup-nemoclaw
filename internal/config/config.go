@@ -129,8 +129,8 @@ func Validate(cfg *Config) error {
 
 	if cfg.Runtime.Endpoint == "" {
 		v.Add("runtime.endpoint", "is required")
-	} else if _, err := url.ParseRequestURI(cfg.Runtime.Endpoint); err != nil {
-		v.Add("runtime.endpoint", "must be a valid URL")
+	} else if parsed, err := url.Parse(cfg.Runtime.Endpoint); err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		v.Add("runtime.endpoint", "must be a valid URL with scheme and host")
 	}
 	if cfg.Runtime.Model == "" {
 		v.Add("runtime.model", "is required")

@@ -19,7 +19,7 @@ type Command struct {
 	PersistentPreRunE func(cmd *Command, args []string) error
 
 	SilenceErrors bool
-	SilenceUsage   bool
+	SilenceUsage  bool
 
 	parent   *Command
 	children []*Command
@@ -29,8 +29,8 @@ type Command struct {
 	out    io.Writer
 	errOut io.Writer
 
-	persistentFlags *flag.FlagSet
-	localFlags      *flag.FlagSet
+	persistentFlags *FlagSet
+	localFlags      *FlagSet
 }
 
 func (c *Command) Execute() error {
@@ -110,14 +110,14 @@ func (c *Command) PersistentFlags() *FlagSet {
 	if c.persistentFlags == nil {
 		c.persistentFlags = newFlagSet(c.Use, c.errWriter())
 	}
-	return &FlagSet{FlagSet: c.persistentFlags}
+	return c.persistentFlags
 }
 
 func (c *Command) Flags() *FlagSet {
 	if c.localFlags == nil {
 		c.localFlags = newFlagSet(c.Use, c.errWriter())
 	}
-	return &FlagSet{FlagSet: c.localFlags}
+	return c.localFlags
 }
 
 func (c *Command) SetContext(ctx context.Context) {
@@ -138,12 +138,18 @@ func (c *Command) OutOrStdout() io.Writer {
 	if c.out != nil {
 		return c.out
 	}
+	if c.parent != nil {
+		return c.parent.OutOrStdout()
+	}
 	return os.Stdout
 }
 
 func (c *Command) OutOrStderr() io.Writer {
 	if c.errOut != nil {
 		return c.errOut
+	}
+	if c.parent != nil {
+		return c.parent.OutOrStderr()
 	}
 	return os.Stderr
 }
@@ -199,10 +205,10 @@ func (c *Command) errWriter() io.Writer {
 	return os.Stderr
 }
 
-func newFlagSet(use string, out io.Writer) *flag.FlagSet {
+func newFlagSet(use string, out io.Writer) *FlagSet {
 	fs := flag.NewFlagSet(use, flag.ContinueOnError)
 	fs.SetOutput(out)
-	return fs
+	return &FlagSet{FlagSet: fs}
 }
 
 func helpRequested(args []string) bool {
@@ -295,9 +301,9 @@ func (f *FlagSet) ensureSpecs() {
 }
 
 type flagSpec struct {
-	kind       string
-	boolPtr    *bool
-	stringPtr  *string
+	kind      string
+	boolPtr   *bool
+	stringPtr *string
 }
 
 func splitFlag(arg string) (name string, value string, hasValue bool) {
