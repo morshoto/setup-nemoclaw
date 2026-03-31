@@ -416,7 +416,7 @@ func (p *Provider) createSecurityGroup(ctx context.Context, client ec2Client, vp
 	}
 
 	rules := []string{"no inbound rules configured"}
-	if strings.TrimSpace(req.SSHKeyName) != "" && strings.TrimSpace(req.SSHCIDR) != "" {
+	if strings.TrimSpace(req.SSHCIDR) != "" {
 		_, err = client.AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
 			GroupId: awsbase.String(awsString(out.GroupId)),
 			IpPermissions: []ec2types.IpPermission{{

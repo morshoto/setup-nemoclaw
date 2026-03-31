@@ -44,6 +44,10 @@ func newInfraCreateCommand(app *App) *cobra.Command {
 			if err := validateInfraCreateFlags(sshKeyName, sshCIDR); err != nil {
 				return err
 			}
+			sshCIDR, err = resolveSSHCIDR(cmd.Context(), sshKeyName, sshCIDR)
+			if err != nil {
+				return err
+			}
 
 			logger := loggerFromContext(cmd.Context())
 			logger.Info("starting infra create")
@@ -67,7 +71,7 @@ func newInfraCreateCommand(app *App) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&sshKeyName, "ssh-key-name", "", "SSH key pair name to attach to the instance")
-	cmd.Flags().StringVar(&sshCIDR, "ssh-cidr", "", "CIDR allowed to reach port 22 when SSH access is configured")
+	cmd.Flags().StringVar(&sshCIDR, "ssh-cidr", "", "CIDR allowed to reach port 22 when SSH access is configured; auto-detected from your public IP when omitted")
 	return cmd
 }
 
@@ -109,8 +113,6 @@ func validateInfraCreateFlags(sshKeyName, sshCIDR string) error {
 	sshKeyName = strings.TrimSpace(sshKeyName)
 	sshCIDR = strings.TrimSpace(sshCIDR)
 	switch {
-	case sshKeyName != "" && sshCIDR == "":
-		return errors.New("ssh-cidr is required when ssh-key-name is set")
 	case sshKeyName == "" && sshCIDR != "":
 		return errors.New("ssh-key-name is required when ssh-cidr is set")
 	default:

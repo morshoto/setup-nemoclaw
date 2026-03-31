@@ -203,6 +203,66 @@ sandbox:
 	}
 }
 
+func TestCreateCommandRequiresSSHAccessConfiguration(t *testing.T) {
+	restore := stubAWSProviderFactory()
+	defer restore()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "openclaw.yaml")
+	writeConfig(t, path, `
+platform:
+  name: aws
+compute:
+  class: cpu
+region:
+  name: us-east-1
+instance:
+  type: t3.xlarge
+  disk_size_gb: 20
+image:
+  name: Ubuntu 22.04 LTS
+runtime:
+  endpoint: https://nim.example.com
+  model: llama3.2
+sandbox:
+  network_mode: public
+`)
+
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"openclaw", "--config", path, "create"}
+
+	app := New()
+	cmd := newRootCommand(app)
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stdout)
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil")
+	}
+	if !strings.Contains(err.Error(), "ssh-key-name is required for `create`") {
+		t.Fatalf("error = %v, want ssh access validation", err)
+	}
+}
+
+func TestResolveSSHCIDRAutoDetectsPublicIP(t *testing.T) {
+	original := detectSSHCIDR
+	detectSSHCIDR = func(ctx context.Context) (string, error) {
+		return "198.51.100.23", nil
+	}
+	defer func() { detectSSHCIDR = original }()
+
+	cidr, err := resolveSSHCIDR(context.Background(), "demo-key", "")
+	if err != nil {
+		t.Fatalf("resolveSSHCIDR() error = %v", err)
+	}
+	if cidr != "198.51.100.23/32" {
+		t.Fatalf("cidr = %q, want 198.51.100.23/32", cidr)
+	}
+}
+
 func TestInstallCommandRunsWorkflowAgainstResolvedInstance(t *testing.T) {
 	restore := stubAWSProviderFactory()
 	defer restore()

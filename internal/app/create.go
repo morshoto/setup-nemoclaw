@@ -35,7 +35,14 @@ func newCreateCommand(app *App) *cobra.Command {
 			if err := config.Validate(cfg); err != nil {
 				return err
 			}
+			if err := validateCreateWorkflowSSHFlags(sshKeyName, sshCIDR); err != nil {
+				return err
+			}
 			if err := validateInfraCreateFlags(sshKeyName, sshCIDR); err != nil {
+				return err
+			}
+			sshCIDR, err = resolveSSHCIDR(cmd.Context(), sshKeyName, sshCIDR)
+			if err != nil {
 				return err
 			}
 
@@ -68,7 +75,7 @@ func newCreateCommand(app *App) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&sshKeyName, "ssh-key-name", "", "SSH key pair name to attach to the instance")
-	cmd.Flags().StringVar(&sshCIDR, "ssh-cidr", "", "CIDR allowed to reach port 22 when SSH access is configured")
+	cmd.Flags().StringVar(&sshCIDR, "ssh-cidr", "", "CIDR allowed to reach port 22 when SSH access is configured; auto-detected from your public IP when omitted")
 	cmd.Flags().StringVar(&sshUser, "ssh-user", "", "SSH username for the target host")
 	cmd.Flags().StringVar(&sshKey, "ssh-key", "", "path to the SSH private key")
 	cmd.Flags().IntVar(&sshPort, "ssh-port", 22, "SSH port")
@@ -77,4 +84,18 @@ func newCreateCommand(app *App) *cobra.Command {
 	cmd.Flags().BoolVar(&useNemoClaw, "use-nemoclaw", false, "enable NemoClaw settings for the generated runtime config")
 	cmd.Flags().BoolVar(&disableNemoClaw, "disable-nemoclaw", false, "disable NemoClaw settings for the generated runtime config")
 	return cmd
+}
+
+func validateCreateWorkflowSSHFlags(sshKeyName, sshCIDR string) error {
+	sshKeyName = strings.TrimSpace(sshKeyName)
+	sshCIDR = strings.TrimSpace(sshCIDR)
+	switch {
+	case sshKeyName == "":
+		if sshCIDR == "" {
+			return errors.New("ssh-key-name is required for `create` so the CLI can reach the instance over SSH")
+		}
+		return errors.New("ssh-key-name is required when ssh-cidr is set")
+	default:
+		return nil
+	}
 }

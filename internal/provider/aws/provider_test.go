@@ -312,6 +312,41 @@ func TestCreateInstanceUsesDefaultVpcSubnetAndReturnsMetadata(t *testing.T) {
 	}
 }
 
+func TestCreateInstanceOpensSSHIngressWithCIDROnly(t *testing.T) {
+	fakeEC2 := &fakeEC2Client{
+		t: t,
+	}
+	p := &Provider{
+		Config: Config{Profile: "test-profile"},
+		loadDefaultConfig: func(ctx context.Context, optFns ...func(*awsconfig.LoadOptions) error) (awsbase.Config, error) {
+			return awsbase.Config{
+				Region:      "us-east-1",
+				Credentials: awsbase.NewCredentialsCache(staticCredentialsProvider{}),
+			}, nil
+		},
+		newEC2Client: func(cfg awsbase.Config) ec2Client {
+			return fakeEC2
+		},
+	}
+
+	_, err := p.CreateInstance(context.Background(), provider.CreateInstanceRequest{
+		Region:           "us-east-1",
+		InstanceType:     "t3.xlarge",
+		Image:            "ami-0123456789abcdef0",
+		ImageName:        "Ubuntu 22.04 LTS",
+		DiskSizeGB:       20,
+		NetworkMode:      "public",
+		ConnectionMethod: "ssh",
+		SSHCIDR:          "203.0.113.0/24",
+	})
+	if err != nil {
+		t.Fatalf("CreateInstance() error = %v", err)
+	}
+	if fakeEC2.authorizedCIDR != "203.0.113.0/24" {
+		t.Fatalf("authorizedCIDR = %q, want 203.0.113.0/24", fakeEC2.authorizedCIDR)
+	}
+}
+
 func mustAuthError(t *testing.T, err error) *AuthError {
 	t.Helper()
 	var authErr *AuthError
