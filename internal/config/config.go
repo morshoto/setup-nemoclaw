@@ -45,7 +45,9 @@ type RuntimeConfig struct {
 }
 
 type SandboxConfig struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled     bool   `yaml:"enabled"`
+	NetworkMode string `yaml:"network_mode"`
+	UseNemoClaw bool   `yaml:"use_nemoclaw"`
 }
 
 type ValidationError struct {
@@ -136,6 +138,10 @@ func Validate(cfg *Config) error {
 		v.Add("runtime.model", "is required")
 	}
 
+	if cfg.Sandbox.NetworkMode != "" && cfg.Sandbox.NetworkMode != "public" && cfg.Sandbox.NetworkMode != "private" {
+		v.Add("sandbox.network_mode", "must be public or private")
+	}
+
 	return v.OrNil()
 }
 
@@ -148,6 +154,19 @@ func LoadAndValidate(path string) (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+func Save(path string, cfg *Config) error {
+	if cfg == nil {
+		return errors.New("config save failed: config is nil")
+	}
+	if strings.TrimSpace(path) == "" {
+		return errors.New("config save failed: output path is required")
+	}
+
+	var b strings.Builder
+	writeYAMLConfig(&b, cfg)
+	return os.WriteFile(path, []byte(b.String()), 0o600)
 }
 
 func parseYAML(file *os.File) (map[string]map[string]string, error) {
@@ -231,6 +250,16 @@ func bind(raw map[string]map[string]string) (*Config, error) {
 		}
 		cfg.Sandbox.Enabled = value
 	}
+	if mode := rawValue(raw, "sandbox", "network_mode"); mode != "" {
+		cfg.Sandbox.NetworkMode = mode
+	}
+	if use := rawValue(raw, "sandbox", "use_nemoclaw"); use != "" {
+		value, err := strconv.ParseBool(use)
+		if err != nil {
+			return nil, fmt.Errorf("sandbox.use_nemoclaw: must be true or false")
+		}
+		cfg.Sandbox.UseNemoClaw = value
+	}
 
 	return cfg, nil
 }
@@ -284,8 +313,50 @@ func isKnownField(section, field string) bool {
 	case "runtime":
 		return field == "endpoint" || field == "model"
 	case "sandbox":
-		return field == "enabled"
+		return field == "enabled" || field == "network_mode" || field == "use_nemoclaw"
 	default:
 		return false
 	}
+}
+
+func writeYAMLConfig(b *strings.Builder, cfg *Config) {
+	writeSection := func(name string, fields map[string]string) {
+		b.WriteString(name)
+		b.WriteString(":\n")
+		keys := make([]string, 0, len(fields))
+		for key := range fields {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			b.WriteString("  ")
+			b.WriteString(key)
+			b.WriteString(": ")
+			b.WriteString(fields[key])
+			b.WriteString("\n")
+		}
+	}
+
+	writeSection("platform", map[string]string{
+		"name": cfg.Platform.Name,
+	})
+	writeSection("region", map[string]string{
+		"name": cfg.Region.Name,
+	})
+	writeSection("instance", map[string]string{
+		"disk_size_gb": strconv.Itoa(cfg.Instance.DiskSizeGB),
+		"type":         cfg.Instance.Type,
+	})
+	writeSection("image", map[string]string{
+		"name": cfg.Image.Name,
+	})
+	writeSection("runtime", map[string]string{
+		"endpoint": cfg.Runtime.Endpoint,
+		"model":    cfg.Runtime.Model,
+	})
+	writeSection("sandbox", map[string]string{
+		"enabled":      strconv.FormatBool(cfg.Sandbox.Enabled),
+		"network_mode": cfg.Sandbox.NetworkMode,
+		"use_nemoclaw": strconv.FormatBool(cfg.Sandbox.UseNemoClaw),
+	})
 }

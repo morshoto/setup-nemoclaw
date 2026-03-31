@@ -10,7 +10,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"openclaw/internal/config"
+	"openclaw/internal/prompt"
 	"openclaw/internal/runtime"
+	"openclaw/internal/setup"
 )
 
 func newRootCommand(app *App) *cobra.Command {
@@ -34,6 +36,7 @@ func newRootCommand(app *App) *cobra.Command {
 	rootCmd.AddCommand(newVersionCommand(app))
 	rootCmd.AddCommand(newDoctorCommand())
 	rootCmd.AddCommand(newConfigCommand(app))
+	rootCmd.AddCommand(newInitCommand(app))
 
 	return rootCmd
 }
@@ -87,4 +90,33 @@ func newConfigValidateCommand(app *App) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func newInitCommand(app *App) *cobra.Command {
+	var outputPath string
+
+	cmd := &cobra.Command{
+		Use:   "init",
+		Short: "Run the interactive setup flow",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			session := prompt.NewSession(cmd.InOrStdin(), cmd.OutOrStdout())
+			wizard := setup.NewWizard(session, cmd.OutOrStdout())
+			cfg, err := wizard.Run(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			if strings.TrimSpace(outputPath) == "" {
+				return errors.New("output path is required")
+			}
+			if err := config.Save(outputPath, cfg); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "configuration written to %s\n", outputPath)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&outputPath, "output", "openclaw.yaml", "path to write the generated configuration")
+	return cmd
 }

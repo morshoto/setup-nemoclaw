@@ -77,6 +77,31 @@ unknown:
 	}
 }
 
+func TestSaveAndLoadRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "openclaw.yaml")
+	cfg := &Config{
+		Platform: PlatformConfig{Name: PlatformAWS},
+		Region:   RegionConfig{Name: "us-east-1"},
+		Instance: InstanceConfig{Type: "t3.medium", DiskSizeGB: 20},
+		Image:    ImageConfig{Name: "ubuntu-24.04"},
+		Runtime:  RuntimeConfig{Endpoint: "http://localhost:11434", Model: "llama3.2"},
+		Sandbox:  SandboxConfig{Enabled: true, NetworkMode: "private", UseNemoClaw: true},
+	}
+
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if loaded.Platform.Name != cfg.Platform.Name || loaded.Sandbox.NetworkMode != "private" || !loaded.Sandbox.UseNemoClaw {
+		t.Fatalf("round trip mismatch: %#v", loaded)
+	}
+}
+
 func writeFile(t *testing.T, path, contents string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(strings.TrimSpace(contents)+"\n"), 0o600); err != nil {

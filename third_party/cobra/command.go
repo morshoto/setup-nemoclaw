@@ -26,6 +26,7 @@ type Command struct {
 
 	ctx context.Context
 
+	in     io.Reader
 	out    io.Writer
 	errOut io.Writer
 
@@ -57,6 +58,10 @@ func (c *Command) execute(args []string) error {
 	}
 
 	remaining, err := c.PersistentFlags().parseArgs(args)
+	if err != nil {
+		return err
+	}
+	remaining, err = c.Flags().parseArgs(remaining)
 	if err != nil {
 		return err
 	}
@@ -144,6 +149,16 @@ func (c *Command) OutOrStdout() io.Writer {
 	return os.Stdout
 }
 
+func (c *Command) InOrStdin() io.Reader {
+	if c.in != nil {
+		return c.in
+	}
+	if c.parent != nil {
+		return c.parent.InOrStdin()
+	}
+	return os.Stdin
+}
+
 func (c *Command) OutOrStderr() io.Writer {
 	if c.errOut != nil {
 		return c.errOut
@@ -156,6 +171,10 @@ func (c *Command) OutOrStderr() io.Writer {
 
 func (c *Command) SetOut(w io.Writer) {
 	c.out = w
+}
+
+func (c *Command) SetIn(r io.Reader) {
+	c.in = r
 }
 
 func (c *Command) SetErr(w io.Writer) {
