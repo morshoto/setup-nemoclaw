@@ -186,6 +186,11 @@ func (w *Wizard) listImages(ctx context.Context, region string) ([]provider.Base
 	}
 	items, err := w.Provider.ListBaseImages(ctx, region)
 	if err != nil {
+		var authErr *awsprovider.AuthError
+		if errors.As(err, &authErr) {
+			fmt.Fprintf(w.Out, "Warning: AWS image lookup could not reach SSM: %v\n", err)
+			return fallbackAWSBaseImages(region), nil
+		}
 		return nil, err
 	}
 	if len(items) == 0 {
@@ -200,7 +205,8 @@ func (w *Wizard) warnOnQuota(ctx context.Context, region string) error {
 	}
 	report, err := w.Provider.CheckGPUQuota(ctx, region, "g5")
 	if err != nil {
-		return err
+		fmt.Fprintf(w.Out, "Warning: GPU quota check could not run: %v\n", err)
+		return nil
 	}
 	if report.Source == "mock" {
 		fmt.Fprintln(w.Out, "Quota check is a mock report; live AWS Service Quotas access is not wired yet.")

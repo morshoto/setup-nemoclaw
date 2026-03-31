@@ -481,6 +481,14 @@ func (p *Provider) resolveDLAMIGPUUbuntu2204(ctx context.Context, cfg awsbase.Co
 	const parameterName = "/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id"
 	out, err := client.GetParameter(ctx, &ssm.GetParameterInput{Name: awsbase.String(parameterName)})
 	if err != nil {
+		if isPermissionDenied(err) {
+			return provider.BaseImage{}, &AuthError{
+				Kind:    "permission_denied",
+				Profile: p.Config.Profile,
+				Stage:   authStageAPI,
+				Cause:   fmt.Errorf("resolve Deep Learning AMI GPU Ubuntu 22.04 for region %s: %w", cfg.Region, err),
+			}
+		}
 		return provider.BaseImage{}, fmt.Errorf("resolve Deep Learning AMI GPU Ubuntu 22.04 for region %s: %w", cfg.Region, err)
 	}
 	if out == nil || out.Parameter == nil || strings.TrimSpace(awsString(out.Parameter.Value)) == "" {
