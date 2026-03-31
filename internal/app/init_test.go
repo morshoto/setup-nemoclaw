@@ -247,6 +247,55 @@ func TestInitContinuesWhenAWSAuthCheckIsPermissionDenied(t *testing.T) {
 	}
 }
 
+func TestInitContinuesWhenAWSAuthCheckFailsAtSTS(t *testing.T) {
+	original := newAWSProvider
+	newAWSProvider = func(profile string) provider.CloudProvider {
+		return authFailingCloudProvider{
+			stubCloudProvider: stubCloudProvider{profile: profile},
+			authErr: &awsprovider.AuthError{
+				Kind:    "api_call_failed",
+				Profile: profile,
+				Stage:   "api",
+				Cause:   errors.New("AWS auth check failed while calling sts:GetCallerIdentity"),
+			},
+		}
+	}
+	defer func() { newAWSProvider = original }()
+
+	dir := t.TempDir()
+	output := filepath.Join(dir, "openclaw.yaml")
+	input := strings.Join([]string{
+		"1",                      // platform aws
+		"2",                      // region us-east-1
+		"",                       // accept default instance g5.xlarge
+		"1",                      // image ubuntu-24.04
+		"20",                     // disk size
+		"1",                      // network private
+		"y",                      // use NemoClaw
+		"http://localhost:11434", // endpoint
+		"llama3.2",               // model
+		"y",                      // confirm summary
+	}, "\n") + "\n"
+
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"openclaw", "init", "--output", output}
+
+	app := New()
+	cmd := newRootCommand(app)
+	cmd.SetIn(strings.NewReader(input))
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stdout)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got := stdout.String(); !strings.Contains(got, "Warning: AWS auth check unavailable; continuing.") {
+		t.Fatalf("stdout = %q, want STS warning", got)
+	}
+}
+
 func TestInitFallsBackWhenAWSImageLookupIsPermissionDenied(t *testing.T) {
 	original := newAWSProvider
 	newAWSProvider = func(profile string) provider.CloudProvider {
