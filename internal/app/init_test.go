@@ -246,3 +246,59 @@ func TestInitContinuesWhenAWSAuthCheckIsPermissionDenied(t *testing.T) {
 		t.Fatalf("stdout = %q, want permission-denied warning", got)
 	}
 }
+
+func TestInitFallsBackWhenAWSImageLookupIsPermissionDenied(t *testing.T) {
+	original := newAWSProvider
+	newAWSProvider = func(profile string) provider.CloudProvider {
+		return baseImageFailingCloudProvider{
+			stubCloudProvider: stubCloudProvider{profile: profile},
+			baseImageErr: &awsprovider.AuthError{
+				Kind:    "permission_denied",
+				Profile: profile,
+				Stage:   "api",
+				Cause:   errors.New("UnrecognizedClientException: The security token included in the request is invalid"),
+			},
+		}
+	}
+	defer func() { newAWSProvider = original }()
+
+	dir := t.TempDir()
+	output := filepath.Join(dir, "openclaw.yaml")
+	input := strings.Join([]string{
+		"1",                      // platform aws
+		"2",                      // region us-east-1
+		"",                       // accept default instance g5.xlarge
+		"1",                      // image fallback selection
+		"20",                     // disk size
+		"1",                      // network private
+		"y",                      // use NemoClaw
+		"http://localhost:11434", // endpoint
+		"llama3.2",               // model
+		"y",                      // confirm summary
+	}, "\n") + "\n"
+
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"openclaw", "init", "--output", output}
+
+	app := New()
+	cmd := newRootCommand(app)
+	cmd.SetIn(strings.NewReader(input))
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stdout)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	got := stdout.String()
+	for _, fragment := range []string{
+		"Warning: AWS image lookup could not reach SSM",
+		"Summary",
+		"image: AWS Deep Learning AMI GPU Ubuntu 22.04",
+	} {
+		if !strings.Contains(got, fragment) {
+			t.Fatalf("stdout = %q, want %q", got, fragment)
+		}
+	}
+}

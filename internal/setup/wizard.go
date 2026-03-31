@@ -77,7 +77,13 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 
 	images, err := w.listImages(ctx, region)
 	if err != nil {
-		return nil, err
+		var authErr *awsprovider.AuthError
+		if errors.As(err, &authErr) && (authErr.Kind == "permission_denied" || authErr.Kind == "no_credentials") {
+			fmt.Fprintf(w.Out, "Warning: AWS image lookup could not reach SSM: %v\n", err)
+			images = fallbackAWSBaseImages(region)
+		} else {
+			return nil, err
+		}
 	}
 	image, err := selectBaseImage(w.Prompter, images)
 	if err != nil {
@@ -176,36 +182,14 @@ func (w *Wizard) listInstanceTypes(ctx context.Context, region string) ([]string
 
 func (w *Wizard) listImages(ctx context.Context, region string) ([]provider.BaseImage, error) {
 	if w.Provider == nil {
-		return []provider.BaseImage{{
-			Name:               "AWS Deep Learning AMI GPU Ubuntu 22.04",
-			ID:                 "ami-0exampledlami",
-			Description:        "Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 22.04)",
-			Architecture:       "x86_64",
-			Owner:              "amazon",
-			VirtualizationType: "hvm",
-			RootDeviceType:     "ebs",
-			Region:             region,
-			Source:             "mock",
-			SSMParameter:       "/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id",
-		}}, nil
+		return fallbackAWSBaseImages(region), nil
 	}
 	items, err := w.Provider.ListBaseImages(ctx, region)
 	if err != nil {
 		return nil, err
 	}
 	if len(items) == 0 {
-		return []provider.BaseImage{
-			{
-				Name:               "AWS Deep Learning AMI GPU Ubuntu 22.04",
-				Architecture:       "x86_64",
-				Owner:              "amazon",
-				VirtualizationType: "hvm",
-				RootDeviceType:     "ebs",
-				Region:             region,
-				Source:             "fallback",
-				SSMParameter:       "/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id",
-			},
-		}, nil
+		return fallbackAWSBaseImages(region), nil
 	}
 	return items, nil
 }
@@ -300,4 +284,17 @@ func formatUsage(value *int) string {
 		return "n/a"
 	}
 	return fmt.Sprintf("%d", *value)
+}
+
+func fallbackAWSBaseImages(region string) []provider.BaseImage {
+	return []provider.BaseImage{{
+		Name:               "AWS Deep Learning AMI GPU Ubuntu 22.04",
+		Architecture:       "x86_64",
+		Owner:              "amazon",
+		VirtualizationType: "hvm",
+		RootDeviceType:     "ebs",
+		Region:             region,
+		Source:             "fallback",
+		SSMParameter:       "/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id",
+	}}
 }

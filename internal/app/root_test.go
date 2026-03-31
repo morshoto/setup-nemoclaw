@@ -171,6 +171,15 @@ func (s authFailingCloudProvider) AuthCheck(ctx context.Context) (provider.AuthS
 	return provider.AuthStatus{}, s.authErr
 }
 
+type baseImageFailingCloudProvider struct {
+	stubCloudProvider
+	baseImageErr error
+}
+
+func (s baseImageFailingCloudProvider) ListBaseImages(ctx context.Context, region string) ([]provider.BaseImage, error) {
+	return nil, s.baseImageErr
+}
+
 func (s stubCloudProvider) AuthCheck(ctx context.Context) (provider.AuthStatus, error) {
 	return provider.AuthStatus{
 		Profile: s.profile,
