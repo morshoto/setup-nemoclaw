@@ -41,7 +41,7 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 	if w.Provider != nil {
 		if _, err := w.Provider.AuthCheck(ctx); err != nil {
 			var authErr *awsprovider.AuthError
-			if errors.As(err, &authErr) && authErr.Kind == "permission_denied" {
+			if errors.As(err, &authErr) {
 				fmt.Fprintln(w.Out, "Warning: AWS auth check unavailable; continuing.")
 			} else {
 				return nil, err

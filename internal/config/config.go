@@ -44,6 +44,7 @@ type ImageConfig struct {
 type RuntimeConfig struct {
 	Endpoint string `yaml:"endpoint"`
 	Model    string `yaml:"model"`
+	Port     int    `yaml:"port,omitempty"`
 }
 
 type SandboxConfig struct {
@@ -145,6 +146,9 @@ func Validate(cfg *Config) error {
 	}
 	if cfg.Runtime.Model == "" {
 		v.Add("runtime.model", "is required")
+	}
+	if cfg.Runtime.Port < 0 {
+		v.Add("runtime.port", "must be greater than or equal to 0")
 	}
 
 	if cfg.Sandbox.NetworkMode != "" && cfg.Sandbox.NetworkMode != "public" && cfg.Sandbox.NetworkMode != "private" {

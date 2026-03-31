@@ -42,6 +42,10 @@ func newRootCommand(app *App) *cobra.Command {
 	rootCmd.AddCommand(newConfigCommand(app))
 	rootCmd.AddCommand(newQuotaCommand(app))
 	rootCmd.AddCommand(newInitCommand(app))
+	rootCmd.AddCommand(newCreateCommand(app))
+	rootCmd.AddCommand(newInfraCommand(app))
+	rootCmd.AddCommand(newInstallCommand(app))
+	rootCmd.AddCommand(newVerifyCommand(app))
 
 	return rootCmd
 }
@@ -130,6 +134,7 @@ func newConfigValidateCommand(app *App) *cobra.Command {
 
 func newInitCommand(app *App) *cobra.Command {
 	var outputPath string
+	var provisionNow bool
 
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -158,11 +163,32 @@ func newInitCommand(app *App) *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "configuration written to %s\n", outputPath)
+			if !provisionNow {
+				fmt.Fprintln(cmd.OutOrStdout(), "provisioning skipped")
+				fmt.Fprintln(cmd.OutOrStdout(), "next step: run `openclaw create --config "+outputPath+"` when you are ready")
+				return nil
+			}
+
+			logger := loggerFromContext(cmd.Context())
+			logger.Info("starting init provision flow")
+			fmt.Fprintln(cmd.OutOrStdout(), "provisioning infrastructure...")
+			instance, installResult, verifyReport, err := runCreateWorkflow(cmd.Context(), app.opts.Profile, cfg, createOptions{})
+			printWorkflowSuccess(cmd.OutOrStdout(), instance, installResult, verifyReport, outputPath, cfg, instanceTarget(instance), true)
+			if err != nil {
+				return wrapUserFacingError(
+					"init provisioning failed",
+					err,
+					"the create workflow failed after the configuration was written",
+					"inspect the summary above",
+					"run `openclaw create --config "+outputPath+"` once the host is ready",
+				)
+			}
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&outputPath, "output", "openclaw.yaml", "path to write the generated configuration")
+	cmd.Flags().BoolVar(&provisionNow, "provision", false, "provision infrastructure after writing the configuration")
 	return cmd
 }
 

@@ -11,6 +11,8 @@ import (
 
 	awsbase "github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/servicequotas"
 	sqtypes "github.com/aws/aws-sdk-go-v2/service/servicequotas/types"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
@@ -32,6 +34,7 @@ type Provider struct {
 	newSSMClient      func(cfg awsbase.Config) ssmClient
 	newSTSClient      func(cfg awsbase.Config) stsClient
 	newSQClient       func(cfg awsbase.Config) serviceQuotasClient
+	newEC2Client      func(cfg awsbase.Config) ec2Client
 }
 
 type ssmClient interface {
@@ -45,6 +48,16 @@ type stsClient interface {
 type serviceQuotasClient interface {
 	StartQuotaUtilizationReport(ctx context.Context, params *servicequotas.StartQuotaUtilizationReportInput, optFns ...func(*servicequotas.Options)) (*servicequotas.StartQuotaUtilizationReportOutput, error)
 	GetQuotaUtilizationReport(ctx context.Context, params *servicequotas.GetQuotaUtilizationReportInput, optFns ...func(*servicequotas.Options)) (*servicequotas.GetQuotaUtilizationReportOutput, error)
+}
+
+type ec2Client interface {
+	CreateSecurityGroup(ctx context.Context, params *ec2.CreateSecurityGroupInput, optFns ...func(*ec2.Options)) (*ec2.CreateSecurityGroupOutput, error)
+	AuthorizeSecurityGroupIngress(ctx context.Context, params *ec2.AuthorizeSecurityGroupIngressInput, optFns ...func(*ec2.Options)) (*ec2.AuthorizeSecurityGroupIngressOutput, error)
+	DeleteSecurityGroup(ctx context.Context, params *ec2.DeleteSecurityGroupInput, optFns ...func(*ec2.Options)) (*ec2.DeleteSecurityGroupOutput, error)
+	DescribeVpcs(ctx context.Context, params *ec2.DescribeVpcsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVpcsOutput, error)
+	DescribeSubnets(ctx context.Context, params *ec2.DescribeSubnetsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeSubnetsOutput, error)
+	RunInstances(ctx context.Context, params *ec2.RunInstancesInput, optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error)
+	DescribeInstances(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
 }
 
 const (
@@ -70,6 +83,7 @@ func New(cfg Config) *Provider {
 		newSSMClient:      func(cfg awsbase.Config) ssmClient { return ssm.NewFromConfig(cfg) },
 		newSTSClient:      func(cfg awsbase.Config) stsClient { return sts.NewFromConfig(cfg) },
 		newSQClient:       func(cfg awsbase.Config) serviceQuotasClient { return servicequotas.NewFromConfig(cfg) },
+		newEC2Client:      func(cfg awsbase.Config) ec2Client { return ec2.NewFromConfig(cfg) },
 	}
 }
 
@@ -168,7 +182,312 @@ func (p *Provider) ListBaseImages(ctx context.Context, region string) ([]provide
 }
 
 func (p *Provider) CreateInstance(ctx context.Context, req provider.CreateInstanceRequest) (*provider.Instance, error) {
-	return nil, errors.New("aws instance creation not implemented yet")
+	region := strings.TrimSpace(req.Region)
+	if region == "" {
+		return nil, errors.New("region is required")
+	}
+	imageID := strings.TrimSpace(req.Image)
+	if imageID == "" {
+		return nil, errors.New("image is required")
+	}
+	instanceType := strings.TrimSpace(req.InstanceType)
+	if instanceType == "" {
+		return nil, errors.New("instance type is required")
+	}
+	if req.DiskSizeGB <= 0 {
+		return nil, errors.New("disk size must be greater than 0")
+	}
+
+	cfg, err := p.loadAWSConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Region = region
+
+	client := p.newEC2Client(cfg)
+	vpcID, err := p.defaultVpcID(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	subnetID, err := p.defaultSubnetID(ctx, client, vpcID)
+	if err != nil {
+		return nil, err
+	}
+
+	securityGroupID, rules, err := p.createSecurityGroup(ctx, client, vpcID, req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			_, _ = client.DeleteSecurityGroup(ctx, &ec2.DeleteSecurityGroupInput{GroupId: awsbase.String(securityGroupID)})
+		}
+	}()
+
+	runOut, err := client.RunInstances(ctx, &ec2.RunInstancesInput{
+		ImageId:      awsbase.String(imageID),
+		InstanceType: ec2types.InstanceType(instanceType),
+		MinCount:     awsbase.Int32(1),
+		MaxCount:     awsbase.Int32(1),
+		KeyName:      stringPtr(strings.TrimSpace(req.SSHKeyName)),
+		BlockDeviceMappings: []ec2types.BlockDeviceMapping{{
+			DeviceName: awsbase.String("/dev/xvda"),
+			Ebs: &ec2types.EbsBlockDevice{
+				VolumeSize:          awsbase.Int32(int32(req.DiskSizeGB)),
+				DeleteOnTermination: awsbase.Bool(true),
+			},
+		}},
+		NetworkInterfaces: []ec2types.InstanceNetworkInterfaceSpecification{{
+			DeviceIndex:              awsbase.Int32(0),
+			SubnetId:                 awsbase.String(subnetID),
+			Groups:                   []string{securityGroupID},
+			AssociatePublicIpAddress: awsbase.Bool(strings.TrimSpace(req.NetworkMode) != "private"),
+			DeleteOnTermination:      awsbase.Bool(true),
+		}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("run EC2 instance: %w", err)
+	}
+	if runOut == nil || len(runOut.Instances) == 0 || runOut.Instances[0].InstanceId == nil || strings.TrimSpace(*runOut.Instances[0].InstanceId) == "" {
+		return nil, errors.New("run EC2 instance: missing instance id")
+	}
+	instanceID := *runOut.Instances[0].InstanceId
+
+	waiter := ec2.NewInstanceRunningWaiter(client)
+	if err := waiter.Wait(ctx, &ec2.DescribeInstancesInput{InstanceIds: []string{instanceID}}, 10*time.Minute); err != nil {
+		return nil, fmt.Errorf("wait for EC2 instance %s to run: %w", instanceID, err)
+	}
+
+	describeOut, err := client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{InstanceIds: []string{instanceID}})
+	if err != nil {
+		return nil, fmt.Errorf("describe EC2 instance %s: %w", instanceID, err)
+	}
+	ec2Instance := findInstance(describeOut, instanceID)
+	if ec2Instance == nil {
+		return nil, fmt.Errorf("describe EC2 instance %s: instance not found", instanceID)
+	}
+
+	publicIP := awsString(ec2Instance.PublicIpAddress)
+	privateIP := awsString(ec2Instance.PrivateIpAddress)
+	connectionInfo := buildConnectionInfo(req, publicIP, privateIP)
+
+	return &provider.Instance{
+		ID:                 instanceID,
+		Name:               instanceID,
+		Region:             region,
+		PublicIP:           publicIP,
+		PrivateIP:          privateIP,
+		ConnectionInfo:     connectionInfo,
+		SecurityGroupID:    securityGroupID,
+		SecurityGroupRules: rules,
+	}, nil
+}
+
+func (p *Provider) GetInstance(ctx context.Context, region, instanceID string) (*provider.Instance, error) {
+	region = strings.TrimSpace(region)
+	instanceID = strings.TrimSpace(instanceID)
+	if region == "" {
+		return nil, errors.New("region is required")
+	}
+	if instanceID == "" {
+		return nil, errors.New("instance id is required")
+	}
+
+	cfg, err := p.loadAWSConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Region = region
+
+	client := p.newEC2Client(cfg)
+	describeOut, err := client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{InstanceIds: []string{instanceID}})
+	if err != nil {
+		return nil, fmt.Errorf("describe EC2 instance %s: %w", instanceID, err)
+	}
+	ec2Instance := findInstance(describeOut, instanceID)
+	if ec2Instance == nil {
+		return nil, fmt.Errorf("describe EC2 instance %s: instance not found", instanceID)
+	}
+
+	publicIP := awsString(ec2Instance.PublicIpAddress)
+	privateIP := awsString(ec2Instance.PrivateIpAddress)
+	connectionInfo := "connection details unavailable"
+	if publicIP != "" {
+		connectionInfo = fmt.Sprintf("public IP: %s", publicIP)
+	} else if privateIP != "" {
+		connectionInfo = fmt.Sprintf("private IP: %s", privateIP)
+	}
+
+	return &provider.Instance{
+		ID:             instanceID,
+		Name:           instanceID,
+		Region:         region,
+		PublicIP:       publicIP,
+		PrivateIP:      privateIP,
+		ConnectionInfo: connectionInfo,
+	}, nil
+}
+
+func (p *Provider) defaultVpcID(ctx context.Context, client ec2Client) (string, error) {
+	out, err := client.DescribeVpcs(ctx, &ec2.DescribeVpcsInput{
+		Filters: []ec2types.Filter{{
+			Name:   awsbase.String("is-default"),
+			Values: []string{"true"},
+		}},
+	})
+	if err != nil {
+		return "", fmt.Errorf("describe default VPC: %w", err)
+	}
+	for _, vpc := range out.Vpcs {
+		if vpc.VpcId != nil && strings.TrimSpace(*vpc.VpcId) != "" {
+			return *vpc.VpcId, nil
+		}
+	}
+	return "", errors.New("describe default VPC: no default VPC found")
+}
+
+func (p *Provider) defaultSubnetID(ctx context.Context, client ec2Client, vpcID string) (string, error) {
+	out, err := client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
+		Filters: []ec2types.Filter{
+			{
+				Name:   awsbase.String("vpc-id"),
+				Values: []string{vpcID},
+			},
+			{
+				Name:   awsbase.String("default-for-az"),
+				Values: []string{"true"},
+			},
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("describe default subnet: %w", err)
+	}
+	if subnetID := firstSubnetID(out.Subnets); subnetID != "" {
+		return subnetID, nil
+	}
+
+	out, err = client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
+		Filters: []ec2types.Filter{{
+			Name:   awsbase.String("vpc-id"),
+			Values: []string{vpcID},
+		}},
+	})
+	if err != nil {
+		return "", fmt.Errorf("describe subnet in VPC %s: %w", vpcID, err)
+	}
+	if subnetID := firstSubnetID(out.Subnets); subnetID != "" {
+		return subnetID, nil
+	}
+	return "", fmt.Errorf("describe subnet in VPC %s: no subnet found", vpcID)
+}
+
+func (p *Provider) createSecurityGroup(ctx context.Context, client ec2Client, vpcID string, req provider.CreateInstanceRequest) (string, []string, error) {
+	name := fmt.Sprintf("openclaw-%d", time.Now().UnixNano())
+	out, err := client.CreateSecurityGroup(ctx, &ec2.CreateSecurityGroupInput{
+		GroupName:   awsbase.String(name),
+		Description: awsbase.String("OpenClaw instance security group"),
+		VpcId:       awsbase.String(vpcID),
+	})
+	if err != nil {
+		return "", nil, fmt.Errorf("create security group: %w", err)
+	}
+	if out == nil || strings.TrimSpace(awsString(out.GroupId)) == "" {
+		return "", nil, errors.New("create security group: missing group id")
+	}
+
+	rules := []string{"no inbound rules configured"}
+	if strings.TrimSpace(req.SSHKeyName) != "" && strings.TrimSpace(req.SSHCIDR) != "" {
+		_, err = client.AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
+			GroupId: awsbase.String(awsString(out.GroupId)),
+			IpPermissions: []ec2types.IpPermission{{
+				FromPort:   awsbase.Int32(22),
+				ToPort:     awsbase.Int32(22),
+				IpProtocol: awsbase.String("tcp"),
+				IpRanges: []ec2types.IpRange{{
+					CidrIp:      awsbase.String(strings.TrimSpace(req.SSHCIDR)),
+					Description: awsbase.String("SSH access for OpenClaw"),
+				}},
+			}},
+		})
+		if err != nil {
+			return "", nil, fmt.Errorf("authorize SSH ingress: %w", err)
+		}
+		rules = []string{fmt.Sprintf("allow tcp/22 from %s", strings.TrimSpace(req.SSHCIDR))}
+	}
+
+	return awsString(out.GroupId), rules, nil
+}
+
+func findInstance(out *ec2.DescribeInstancesOutput, instanceID string) *ec2types.Instance {
+	if out == nil {
+		return nil
+	}
+	for _, reservation := range out.Reservations {
+		for i := range reservation.Instances {
+			if reservation.Instances[i].InstanceId != nil && *reservation.Instances[i].InstanceId == instanceID {
+				return &reservation.Instances[i]
+			}
+		}
+	}
+	return nil
+}
+
+func firstSubnetID(subnets []ec2types.Subnet) string {
+	for _, subnet := range subnets {
+		if subnet.SubnetId != nil && strings.TrimSpace(*subnet.SubnetId) != "" {
+			return *subnet.SubnetId
+		}
+	}
+	return ""
+}
+
+func buildConnectionInfo(req provider.CreateInstanceRequest, publicIP, privateIP string) string {
+	switch strings.TrimSpace(req.ConnectionMethod) {
+	case "ssh":
+		targetIP := publicIP
+		if targetIP == "" {
+			targetIP = privateIP
+		}
+		if targetIP == "" {
+			return "ssh connection details unavailable"
+		}
+		if strings.TrimSpace(req.SSHCIDR) == "" {
+			return "ssh key configured but no inbound SSH CIDR set"
+		}
+		user := sshUsernameForImage(req.ImageName, req.Image)
+		if key := strings.TrimSpace(req.SSHKeyName); key != "" {
+			return fmt.Sprintf("ssh -i <your-key>.pem %s@%s", user, targetIP)
+		}
+		return fmt.Sprintf("ssh %s@%s", user, targetIP)
+	case "private-ip":
+		if privateIP != "" {
+			return fmt.Sprintf("private IP access: %s", privateIP)
+		}
+		return "private IP access unavailable"
+	default:
+		if publicIP != "" {
+			return fmt.Sprintf("public IP: %s", publicIP)
+		}
+		if privateIP != "" {
+			return fmt.Sprintf("private IP: %s", privateIP)
+		}
+		return "connection details unavailable"
+	}
+}
+
+func sshUsernameForImage(imageName, imageID string) string {
+	lower := strings.ToLower(strings.TrimSpace(imageName) + " " + strings.TrimSpace(imageID))
+	if strings.Contains(lower, "ubuntu") {
+		return "ubuntu"
+	}
+	return "ec2-user"
+}
+
+func stringPtr(value string) *string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return awsbase.String(value)
 }
 
 func (p *Provider) DeleteInstance(ctx context.Context, instanceID string) error {
@@ -301,6 +620,9 @@ func (p *Provider) ensureDeps() {
 	}
 	if p.newSQClient == nil {
 		p.newSQClient = func(cfg awsbase.Config) serviceQuotasClient { return servicequotas.NewFromConfig(cfg) }
+	}
+	if p.newEC2Client == nil {
+		p.newEC2Client = func(cfg awsbase.Config) ec2Client { return ec2.NewFromConfig(cfg) }
 	}
 }
 
