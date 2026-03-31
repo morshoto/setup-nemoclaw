@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 
@@ -11,6 +12,8 @@ import (
 
 	"openclaw/internal/config"
 	"openclaw/internal/prompt"
+	"openclaw/internal/provider"
+	awsprovider "openclaw/internal/provider/aws"
 	"openclaw/internal/runtime"
 	"openclaw/internal/setup"
 )
@@ -36,6 +39,7 @@ func newRootCommand(app *App) *cobra.Command {
 	rootCmd.AddCommand(newVersionCommand(app))
 	rootCmd.AddCommand(newDoctorCommand())
 	rootCmd.AddCommand(newConfigCommand(app))
+	rootCmd.AddCommand(newQuotaCommand(app))
 	rootCmd.AddCommand(newInitCommand(app))
 
 	return rootCmd
@@ -99,8 +103,12 @@ func newInitCommand(app *App) *cobra.Command {
 		Use:   "init",
 		Short: "Run the interactive setup flow",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			existing, err := existingConfig(app.opts.ConfigPath)
+			if err != nil {
+				return err
+			}
 			session := prompt.NewSession(cmd.InOrStdin(), cmd.OutOrStdout())
-			wizard := setup.NewWizard(session, cmd.OutOrStdout())
+			wizard := setup.NewWizard(session, cmd.OutOrStdout(), awsprovider.New(awsprovider.Config{Profile: app.opts.Profile}), existing)
 			cfg, err := wizard.Run(cmd.Context())
 			if err != nil {
 				return err
@@ -119,4 +127,89 @@ func newInitCommand(app *App) *cobra.Command {
 
 	cmd.Flags().StringVar(&outputPath, "output", "openclaw.yaml", "path to write the generated configuration")
 	return cmd
+}
+
+func newQuotaCommand(app *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "quota",
+		Short: "Inspect cloud quotas",
+	}
+	cmd.AddCommand(newQuotaCheckCommand(app))
+	return cmd
+}
+
+func newQuotaCheckCommand(app *App) *cobra.Command {
+	var platform string
+	var region string
+	var instanceFamily string
+
+	cmd := &cobra.Command{
+		Use:   "check",
+		Short: "Check quota readiness for a GPU instance family",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(platform) == "" {
+				platform = config.PlatformAWS
+			}
+			if platform != config.PlatformAWS {
+				return fmt.Errorf("%s quota checks are not implemented yet", platform)
+			}
+			if strings.TrimSpace(region) == "" {
+				return errors.New("region is required")
+			}
+			if strings.TrimSpace(instanceFamily) == "" {
+				instanceFamily = "g5"
+			}
+
+			report, err := awsprovider.New(awsprovider.Config{Profile: app.opts.Profile}).CheckGPUQuota(cmd.Context(), region, instanceFamily)
+			if err != nil {
+				return err
+			}
+
+			printQuotaReport(cmd.OutOrStdout(), report)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&platform, "platform", config.PlatformAWS, "cloud platform to inspect")
+	cmd.Flags().StringVar(&region, "region", "", "region to inspect")
+	cmd.Flags().StringVar(&instanceFamily, "instance-family", "g5", "GPU instance family to inspect")
+	return cmd
+}
+
+func existingConfig(path string) (*config.Config, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, nil
+	}
+	return config.Load(path)
+}
+
+func printQuotaReport(out io.Writer, report provider.GPUQuotaReport) {
+	fmt.Fprintf(out, "Quota status for %s in %s\n", report.InstanceFamily, report.Region)
+	fmt.Fprintf(out, "Likely creatable: %t\n", report.LikelyCreatable)
+	for _, check := range report.Checks {
+		fmt.Fprintf(out, "- %s\n", check.QuotaName)
+		fmt.Fprintf(out, "  current limit: %d\n", check.CurrentLimit)
+		if check.CurrentUsage == nil {
+			fmt.Fprintln(out, "  current usage: n/a")
+		} else {
+			fmt.Fprintf(out, "  current usage: %d\n", *check.CurrentUsage)
+		}
+		fmt.Fprintf(out, "  estimated remaining capacity: %d\n", check.EstimatedRemaining)
+		if check.UsageIsEstimated {
+			fmt.Fprintln(out, "  usage source: estimate")
+		} else {
+			fmt.Fprintln(out, "  usage source: actual")
+		}
+	}
+	if len(report.Notes) > 0 {
+		fmt.Fprintln(out, "Next steps:")
+		for _, note := range report.Notes {
+			fmt.Fprintf(out, "- %s\n", note)
+		}
+	}
+	if !report.LikelyCreatable {
+		fmt.Fprintln(out, "Suggested actions:")
+		fmt.Fprintln(out, "- Try another region.")
+		fmt.Fprintln(out, "- Request a Service Quotas increase for the relevant G-family quota.")
+	}
 }

@@ -13,7 +13,7 @@ func TestInitWritesConfigFile(t *testing.T) {
 	output := filepath.Join(dir, "openclaw.yaml")
 	input := strings.Join([]string{
 		"1",                      // platform aws
-		"1",                      // region us-east-1
+		"2",                      // region us-east-1
 		"1",                      // instance t3.medium
 		"1",                      // image ubuntu-24.04
 		"20",                     // disk size
@@ -85,5 +85,63 @@ func TestInitRejectsNonAWSPlatform(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not implemented yet") {
 		t.Fatalf("error = %v, want not implemented", err)
+	}
+}
+
+func TestInitPreselectsRegionFromExistingConfig(t *testing.T) {
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "existing.yaml")
+	writeConfig(t, existing, `
+platform:
+  name: aws
+region:
+  name: us-west-2
+instance:
+  type: t3.medium
+  disk_size_gb: 20
+image:
+  name: ubuntu-24.04
+runtime:
+  endpoint: http://localhost:11434
+  model: llama3.2
+sandbox:
+  enabled: false
+  network_mode: private
+  use_nemoclaw: false
+`)
+	output := filepath.Join(dir, "output.yaml")
+	input := strings.Join([]string{
+		"1", // platform aws
+		"",  // accept preselected region from existing config
+		"1", // instance
+		"1", // image
+		"20",
+		"1",
+		"y",
+		"http://localhost:11434",
+		"llama3.2",
+		"y",
+	}, "\n") + "\n"
+
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"openclaw", "--config", existing, "init", "--output", output}
+
+	app := New()
+	cmd := newRootCommand(app)
+	cmd.SetIn(strings.NewReader(input))
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stdout)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !strings.Contains(string(data), "region:\n  name: us-west-2") {
+		t.Fatalf("config file %q does not preserve existing region default", string(data))
 	}
 }

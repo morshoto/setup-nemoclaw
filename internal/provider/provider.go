@@ -5,16 +5,27 @@ import "context"
 type CloudProvider interface {
 	AuthCheck(ctx context.Context) error
 	ListRegions(ctx context.Context) ([]string, error)
-	CheckGPUQuota(ctx context.Context, region string) (GPUQuota, error)
+	CheckGPUQuota(ctx context.Context, region, instanceFamily string) (GPUQuotaReport, error)
 	ListInstanceTypes(ctx context.Context, region string) ([]InstanceType, error)
 	ListBaseImages(ctx context.Context, region string) ([]BaseImage, error)
 	CreateInstance(ctx context.Context, req CreateInstanceRequest) (*Instance, error)
 	DeleteInstance(ctx context.Context, instanceID string) error
 }
 
-type GPUQuota struct {
-	Total     int
-	Available int
+type GPUQuotaReport struct {
+	Region          string
+	InstanceFamily  string
+	Checks          []GPUQuotaCheck
+	LikelyCreatable bool
+	Notes           []string
+}
+
+type GPUQuotaCheck struct {
+	QuotaName          string
+	CurrentLimit       int
+	CurrentUsage       *int
+	EstimatedRemaining int
+	UsageIsEstimated   bool
 }
 
 type InstanceType struct {

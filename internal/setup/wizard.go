@@ -5,18 +5,23 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
+	"strings"
 
 	"openclaw/internal/config"
 	"openclaw/internal/prompt"
+	"openclaw/internal/provider"
 )
 
 type Wizard struct {
 	Prompter *prompt.Session
 	Out      io.Writer
+	Provider provider.CloudProvider
+	Existing *config.Config
 }
 
-func NewWizard(prompter *prompt.Session, out io.Writer) *Wizard {
-	return &Wizard{Prompter: prompter, Out: out}
+func NewWizard(prompter *prompt.Session, out io.Writer, p provider.CloudProvider, existing *config.Config) *Wizard {
+	return &Wizard{Prompter: prompter, Out: out, Provider: p, Existing: existing}
 }
 
 func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
@@ -29,20 +34,37 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 		return nil, fmt.Errorf("%s is not implemented yet", platform)
 	}
 
-	regions := []string{"us-east-1", "us-west-2"}
-	region, err := w.Prompter.Select("Select AWS region", regions, "us-east-1")
+	regions, err := w.listRegions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	regionDefault := "us-east-1"
+	if w.Existing != nil && strings.TrimSpace(w.Existing.Region.Name) != "" && slices.Contains(regions, w.Existing.Region.Name) {
+		regionDefault = w.Existing.Region.Name
+	}
+	region, err := w.Prompter.Select("Select AWS region", regions, regionDefault)
 	if err != nil {
 		return nil, err
 	}
 
-	instanceTypes := []string{"t3.medium", "g4dn.xlarge"}
-	instanceType, err := w.Prompter.Select("Select instance type", instanceTypes, "t3.medium")
+	if err := w.warnOnQuota(ctx, region); err != nil {
+		return nil, err
+	}
+
+	instanceTypes, err := w.listInstanceTypes(ctx, region)
+	if err != nil {
+		return nil, err
+	}
+	instanceType, err := w.Prompter.Select("Select instance type", instanceTypes, defaultOption(instanceTypes, "t3.medium"))
 	if err != nil {
 		return nil, err
 	}
 
-	images := []string{"ubuntu-24.04", "amazon-linux-2023"}
-	image, err := w.Prompter.Select("Select base image", images, "ubuntu-24.04")
+	images, err := w.listImages(ctx, region)
+	if err != nil {
+		return nil, err
+	}
+	image, err := w.Prompter.Select("Select base image", images, defaultOption(images, "ubuntu-24.04"))
 	if err != nil {
 		return nil, err
 	}
@@ -107,4 +129,98 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func (w *Wizard) listRegions(ctx context.Context) ([]string, error) {
+	if w.Provider == nil {
+		return []string{"us-east-1", "us-west-2"}, nil
+	}
+	return w.Provider.ListRegions(ctx)
+}
+
+func (w *Wizard) listInstanceTypes(ctx context.Context, region string) ([]string, error) {
+	if w.Provider == nil {
+		return []string{"t3.medium", "g4dn.xlarge", "g5.xlarge"}, nil
+	}
+	items, err := w.Provider.ListInstanceTypes(ctx, region)
+	if err != nil {
+		return nil, err
+	}
+	options := make([]string, 0, len(items))
+	for _, item := range items {
+		options = append(options, item.Name)
+	}
+	if len(options) == 0 {
+		return []string{"t3.medium"}, nil
+	}
+	return options, nil
+}
+
+func (w *Wizard) listImages(ctx context.Context, region string) ([]string, error) {
+	if w.Provider == nil {
+		return []string{"ubuntu-24.04", "amazon-linux-2023"}, nil
+	}
+	items, err := w.Provider.ListBaseImages(ctx, region)
+	if err != nil {
+		return nil, err
+	}
+	options := make([]string, 0, len(items))
+	for _, item := range items {
+		options = append(options, item.Name)
+	}
+	if len(options) == 0 {
+		return []string{"ubuntu-24.04"}, nil
+	}
+	return options, nil
+}
+
+func (w *Wizard) warnOnQuota(ctx context.Context, region string) error {
+	if w.Provider == nil {
+		return nil
+	}
+	report, err := w.Provider.CheckGPUQuota(ctx, region, "g5")
+	if err != nil {
+		return err
+	}
+	if report.LikelyCreatable {
+		return nil
+	}
+
+	fmt.Fprintf(w.Out, "Warning: GPU quota for %s in %s looks insufficient.\n", report.InstanceFamily, report.Region)
+	for _, check := range report.Checks {
+		fmt.Fprintf(w.Out, "  %s: limit=%d usage=%s remaining=%d\n", check.QuotaName, check.CurrentLimit, formatUsage(check.CurrentUsage), check.EstimatedRemaining)
+	}
+	if len(report.Notes) > 0 {
+		fmt.Fprintln(w.Out, "Notes:")
+		for _, note := range report.Notes {
+			fmt.Fprintf(w.Out, "  - %s\n", note)
+		}
+	}
+	confirm, err := w.Prompter.Confirm("Quota looks insufficient. Continue anyway", false)
+	if err != nil {
+		return err
+	}
+	if !confirm {
+		return errors.New("setup cancelled due to insufficient quota")
+	}
+	return nil
+}
+
+func defaultOption(options []string, fallback string) string {
+	if len(options) == 0 {
+		return fallback
+	}
+	for _, option := range options {
+		if option == fallback {
+			return fallback
+		}
+	}
+	return options[0]
+}
+
+func formatUsage(value *int) string {
+	if value == nil {
+		return "n/a"
+	}
+	return fmt.Sprintf("%d", *value)
 }
