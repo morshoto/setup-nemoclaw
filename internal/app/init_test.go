@@ -433,3 +433,10 @@ func (cpuInitCloudProvider) ListBaseImages(ctx context.Context, region string) (
 		SSMParameter:       "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id",
 	}}, nil
 }
+
+func (cpuInitCloudProvider) ListInstanceTypes(ctx context.Context, region string) ([]provider.InstanceType, error) {
+	return []provider.InstanceType{
+		{Name: "t3.xlarge", MemoryGB: 16},
+		{Name: "t3.2xlarge", MemoryGB: 32},
+	}, nil
+}
