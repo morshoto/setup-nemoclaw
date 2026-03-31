@@ -2,6 +2,7 @@
 .vscode/
 .log/
 .tool-versions
+diff.txt
 
 # Terraform local variable files
 terraform/**/terraform.tfvars

@@ -1,26 +1,19 @@
-- [ ] PR レビューを依頼してください
-- [ ] レビューができない状態であれば [PR draft](https://github.blog/2019-02-14-introducing-draft-pull-requests/)にしてください。
+- [ ] Request PR review
+- [ ] If you are unable to review, please set it as a [PR draft](https://github.blog/2019-02-14-introducing-draft-pull-requests/) draft.
 - [ ] Github issue: Closes: #
 
-## 概要
+## Overview
 
-<!-- このプルリクエストで何をしたのか、概要を書いてください -->
-<!-- 例：〇〇の問題を解決するために、△△の機能を追加しました -->
-<!-- PRの種類を示すために Put Github Label を付けてください -->
+<!-- Please provide a summary of what you did in this pull request -->
+<!-- Example: Added △△ functionality to resolve the issue with 〇〇 -->
+<!-- Please attach a Github Label to indicate the type of PR -->
 <!-- open -->
 
 <!-- close -->
 
-- [ ] 🐛: バグ修正 (Bugfix)
-- [ ] ✨: 新機能 (Feature)
-- [ ] 💻: コードスタイルの更新 (フォーマット、ローカル変数) (Code style update)
-- [ ] ♻️: リファクタリング (機能的な変更や API の変更なし) (Refactoring)
-- [ ] 📝: ドキュメントの変更 (Documentation content changes)
-- [ ] 🛠️: その他 (Other... Please describe:)
+## Screenshots
 
-## スクリーンショット
-
-<!-- スクリーンショットや.gifを貼ってもらえるとレビューしやすくなります！ -->
+<!-- It would be easier to review if you could attach screenshots or .gif files.！ -->
 <!-- open -->
 
 <!-- close -->
