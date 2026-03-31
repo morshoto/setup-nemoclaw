@@ -1,0 +1,25 @@
+name: Setup Node.js dependencies
+description: Setup Node.js version and install dependencies
+inputs:
+  node-version:
+    description: Node.js version to use.
+    required: true
+  target-directory:
+    description: Target directory to install dependencies in.
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Install Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: ${{ inputs.node-version }}
+    - name: Enable Corepack pnpm
+      shell: bash
+      run: |
+        corepack enable
+        corepack prepare pnpm@10.19.0 --activate
+    - name: Install dependencies
+      run: pnpm install
+      shell: bash
+      working-directory: ${{ inputs.target-directory }}

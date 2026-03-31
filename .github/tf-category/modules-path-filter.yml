@@ -1,0 +1,20 @@
+apprunner:
+  - 'terraform/modules/apprunner/**'
+'apprunner/edge':
+  - 'terraform/modules/apprunner/edge/**'
+'apprunner/vpc-connector':
+  - 'terraform/modules/apprunner/vpc-connector/**'
+cognito:
+  - 'terraform/modules/cognito/**'
+ecr:
+  - 'terraform/modules/ecr/**'
+iam:
+  - 'terraform/modules/iam/**'
+lambda:
+  - 'terraform/modules/lambda/**'
+rds:
+  - 'terraform/modules/rds/**'
+'ses/email-identity':
+  - 'terraform/modules/ses/email-identity/**'
+'s3/state-backend':
+  - 'terraform/modules/s3/state-backend/**'

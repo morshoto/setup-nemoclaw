@@ -1,0 +1,28 @@
+name: Cache each environment setting
+description: This composite run steps cache each environment setting.
+inputs:
+  python-version:
+    description: Python version to use.
+    required: true
+  TARGET_DIRECTORY:
+    description: Target directory to change into
+    required: false
+    default: .
+runs:
+  using: composite
+  steps:
+    - name: Set the Python version
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ inputs.python-version }}
+    - name: Set the build-essential if gcc is unavailable
+      run: |
+        if ! command -v gcc >/dev/null 2>&1; then
+          sudo apt-get update -y
+          sudo apt-get install -y build-essential
+        fi
+      shell: bash
+    - name: Install each Python library
+      run: pip install -r requirements.txt
+      shell: bash
+      working-directory: ${{ inputs.TARGET_DIRECTORY }}

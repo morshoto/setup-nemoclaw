@@ -1,0 +1,22 @@
+name: '❓ Question'
+description: 'Ask a question or request clarification about the project. Please provide as much detail as possible to help us understand your question.'
+title: '❓ '
+labels:
+    - 'Feedback: Question'
+body:
+    - type: textarea
+      id: summary
+      attributes:
+          label: 'Summary'
+          description: "A brief description of the question\n -Background or purpose\n -Specific question content"
+          placeholder: 'Example: I want to confirm the deployment steps for the staging environment'
+      validations:
+          required: true
+
+    - type: textarea
+      id: links
+      attributes:
+          label: 'Related Links'
+          description: 'Links to related issues, PRs, or documentation'
+      validations:
+          required: false
