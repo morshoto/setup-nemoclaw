@@ -17,7 +17,9 @@ type fakeProvider struct {
 	report  provider.GPUQuotaReport
 }
 
-func (f fakeProvider) AuthCheck(ctx context.Context) error { return nil }
+func (f fakeProvider) AuthCheck(ctx context.Context) (provider.AuthStatus, error) {
+	return provider.AuthStatus{}, nil
+}
 func (f fakeProvider) ListRegions(ctx context.Context) ([]string, error) {
 	return f.regions, nil
 }

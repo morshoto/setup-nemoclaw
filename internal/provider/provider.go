@@ -3,13 +3,20 @@ package provider
 import "context"
 
 type CloudProvider interface {
-	AuthCheck(ctx context.Context) error
+	AuthCheck(ctx context.Context) (AuthStatus, error)
 	ListRegions(ctx context.Context) ([]string, error)
 	CheckGPUQuota(ctx context.Context, region, instanceFamily string) (GPUQuotaReport, error)
 	ListInstanceTypes(ctx context.Context, region string) ([]InstanceType, error)
 	ListBaseImages(ctx context.Context, region string) ([]BaseImage, error)
 	CreateInstance(ctx context.Context, req CreateInstanceRequest) (*Instance, error)
 	DeleteInstance(ctx context.Context, instanceID string) error
+}
+
+type AuthStatus struct {
+	Profile string
+	Account string
+	Arn     string
+	UserID  string
 }
 
 type GPUQuotaReport struct {

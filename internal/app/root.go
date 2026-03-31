@@ -38,6 +38,7 @@ func newRootCommand(app *App) *cobra.Command {
 
 	rootCmd.AddCommand(newVersionCommand(app))
 	rootCmd.AddCommand(newDoctorCommand())
+	rootCmd.AddCommand(newAuthCommand(app))
 	rootCmd.AddCommand(newConfigCommand(app))
 	rootCmd.AddCommand(newQuotaCommand(app))
 	rootCmd.AddCommand(newInitCommand(app))
@@ -54,6 +55,37 @@ func newDoctorCommand() *cobra.Command {
 			logger.Debug("starting doctor check")
 			logger.Info("running doctor check")
 			fmt.Fprintln(cmd.OutOrStdout(), "openclaw runtime is configured")
+			return nil
+		},
+	}
+}
+
+func newAuthCommand(app *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "auth",
+		Short: "Check AWS authentication",
+	}
+	cmd.AddCommand(newAuthCheckCommand(app))
+	return cmd
+}
+
+func newAuthCheckCommand(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "check",
+		Short: "Verify AWS credentials and API access",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			status, err := newAWSProvider(app.opts.Profile).AuthCheck(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			fmt.Fprintln(cmd.OutOrStdout(), "AWS auth check passed")
+			if status.Profile != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "profile: %s\n", status.Profile)
+			}
+			if status.Arn != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "caller identity: %s\n", status.Arn)
+			}
 			return nil
 		},
 	}
@@ -108,7 +140,11 @@ func newInitCommand(app *App) *cobra.Command {
 				return err
 			}
 			session := prompt.NewSession(cmd.InOrStdin(), cmd.OutOrStdout())
-			wizard := setup.NewWizard(session, cmd.OutOrStdout(), awsprovider.New(awsprovider.Config{Profile: app.opts.Profile}), existing)
+			provider := newAWSProvider(app.opts.Profile)
+			if _, err := provider.AuthCheck(cmd.Context()); err != nil {
+				return err
+			}
+			wizard := setup.NewWizard(session, cmd.OutOrStdout(), provider, existing)
 			cfg, err := wizard.Run(cmd.Context())
 			if err != nil {
 				return err
@@ -160,7 +196,11 @@ func newQuotaCheckCommand(app *App) *cobra.Command {
 				instanceFamily = "g5"
 			}
 
-			report, err := awsprovider.New(awsprovider.Config{Profile: app.opts.Profile}).CheckGPUQuota(cmd.Context(), region, instanceFamily)
+			provider := newAWSProvider(app.opts.Profile)
+			if _, err := provider.AuthCheck(cmd.Context()); err != nil {
+				return err
+			}
+			report, err := provider.CheckGPUQuota(cmd.Context(), region, instanceFamily)
 			if err != nil {
 				return err
 			}
@@ -174,6 +214,10 @@ func newQuotaCheckCommand(app *App) *cobra.Command {
 	cmd.Flags().StringVar(&region, "region", "", "region to inspect")
 	cmd.Flags().StringVar(&instanceFamily, "instance-family", "g5", "GPU instance family to inspect")
 	return cmd
+}
+
+var newAWSProvider = func(profile string) provider.CloudProvider {
+	return awsprovider.New(awsprovider.Config{Profile: profile})
 }
 
 func existingConfig(path string) (*config.Config, error) {

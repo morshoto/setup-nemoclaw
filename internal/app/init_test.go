@@ -11,6 +11,9 @@ import (
 )
 
 func TestInitWritesConfigFile(t *testing.T) {
+	restore := stubAWSProviderFactory()
+	defer restore()
+
 	dir := t.TempDir()
 	output := filepath.Join(dir, "openclaw.yaml")
 	input := strings.Join([]string{
@@ -66,6 +69,9 @@ func TestInitWritesConfigFile(t *testing.T) {
 }
 
 func TestInitRejectsNonAWSPlatform(t *testing.T) {
+	restore := stubAWSProviderFactory()
+	defer restore()
+
 	input := strings.Join([]string{
 		"2", // gcp
 	}, "\n") + "\n"
@@ -91,6 +97,9 @@ func TestInitRejectsNonAWSPlatform(t *testing.T) {
 }
 
 func TestInitPreselectsRegionFromExistingConfig(t *testing.T) {
+	restore := stubAWSProviderFactory()
+	defer restore()
+
 	dir := t.TempDir()
 	existing := filepath.Join(dir, "existing.yaml")
 	writeConfig(t, existing, `
