@@ -25,6 +25,8 @@ type Config struct {
 	Instance InstanceConfig `yaml:"instance"`
 	Image    ImageConfig    `yaml:"image"`
 	Runtime  RuntimeConfig  `yaml:"runtime"`
+	SSH      SSHConfig      `yaml:"ssh,omitempty"`
+	Infra    InfraConfig    `yaml:"infra,omitempty"`
 	Sandbox  SandboxConfig  `yaml:"sandbox"`
 }
 
@@ -41,8 +43,9 @@ type RegionConfig struct {
 }
 
 type InstanceConfig struct {
-	Type       string `yaml:"type"`
-	DiskSizeGB int    `yaml:"disk_size_gb"`
+	Type        string `yaml:"type"`
+	DiskSizeGB   int    `yaml:"disk_size_gb"`
+	NetworkMode string `yaml:"network_mode,omitempty"`
 }
 
 type ImageConfig struct {
@@ -54,6 +57,18 @@ type RuntimeConfig struct {
 	Endpoint string `yaml:"endpoint"`
 	Model    string `yaml:"model"`
 	Port     int    `yaml:"port,omitempty"`
+}
+
+type SSHConfig struct {
+	KeyName         string `yaml:"key_name,omitempty"`
+	PrivateKeyPath   string `yaml:"private_key_path,omitempty"`
+	CIDR            string `yaml:"cidr,omitempty"`
+	User            string `yaml:"user,omitempty"`
+}
+
+type InfraConfig struct {
+	Backend   string `yaml:"backend,omitempty"`
+	ModuleDir string `yaml:"module_dir,omitempty"`
 }
 
 type SandboxConfig struct {
@@ -164,8 +179,20 @@ func Validate(cfg *Config) error {
 		v.Add("runtime.port", "must be greater than or equal to 0")
 	}
 
-	if cfg.Sandbox.NetworkMode != "" && cfg.Sandbox.NetworkMode != "public" && cfg.Sandbox.NetworkMode != "private" {
-		v.Add("sandbox.network_mode", "must be public or private")
+	if mode := EffectiveNetworkMode(cfg); mode != "" && mode != "public" && mode != "private" {
+		v.Add("instance.network_mode", "must be public or private")
+	}
+	if cfg.Infra.Backend != "" && strings.ToLower(strings.TrimSpace(cfg.Infra.Backend)) != "terraform" {
+		v.Add("infra.backend", "must be terraform")
+	}
+	if class := EffectiveComputeClass(cfg.Compute.Class); class == ComputeClassCPU {
+		if strings.TrimSpace(cfg.Instance.Type) != "" && !strings.HasPrefix(strings.TrimSpace(cfg.Instance.Type), "t3.") {
+			v.Add("instance.type", "cpu compute should use a general-purpose instance such as t3.xlarge")
+		}
+	} else if class == ComputeClassGPU {
+		if strings.TrimSpace(cfg.Instance.Type) != "" && !strings.HasPrefix(strings.TrimSpace(cfg.Instance.Type), "g") {
+			v.Add("instance.type", "gpu compute should use a GPU-capable instance such as g5.xlarge")
+		}
 	}
 
 	return v.OrNil()
@@ -213,4 +240,33 @@ func IsValidComputeClass(class string) bool {
 	default:
 		return false
 	}
+}
+
+func EffectiveNetworkMode(cfg *Config) string {
+	if cfg == nil {
+		return ""
+	}
+	if mode := strings.TrimSpace(cfg.Instance.NetworkMode); mode != "" {
+		return mode
+	}
+	return strings.TrimSpace(cfg.Sandbox.NetworkMode)
+}
+
+func IsValidNetworkMode(mode string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "public", "private":
+		return true
+	default:
+		return false
+	}
+}
+
+func EffectiveTerraformBackend(cfg *Config) string {
+	if cfg == nil {
+		return ""
+	}
+	if backend := strings.TrimSpace(cfg.Infra.Backend); backend != "" {
+		return strings.ToLower(backend)
+	}
+	return "terraform"
 }

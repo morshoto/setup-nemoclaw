@@ -2,14 +2,18 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"openclaw/internal/config"
 	"openclaw/internal/host"
+	infratf "openclaw/internal/infra/terraform"
 	"openclaw/internal/provider"
 	"openclaw/internal/runtimeinstall"
 	"openclaw/internal/verify"
@@ -47,6 +51,22 @@ type createOptions struct {
 	DisableNemoClaw bool
 }
 
+type terraformVars struct {
+	Region       string `json:"region"`
+	ComputeClass string `json:"compute_class"`
+	InstanceType string `json:"instance_type"`
+	DiskSizeGB   int    `json:"disk_size_gb"`
+	NetworkMode  string `json:"network_mode"`
+	ImageID      string `json:"image_id"`
+	SSHKeyName   string `json:"ssh_key_name"`
+	SSHCIDR      string `json:"ssh_cidr"`
+	SSHUser      string `json:"ssh_user"`
+	NamePrefix   string `json:"name_prefix"`
+	UseNemoClaw  bool   `json:"use_nemoclaw"`
+	NIMEndpoint  string `json:"nim_endpoint"`
+	Model        string `json:"model"`
+}
+
 type verifyOptions struct {
 	Target            string
 	SSHUser           string
@@ -55,28 +75,90 @@ type verifyOptions struct {
 	RuntimeConfigPath string
 }
 
-func runInfraCreate(ctx context.Context, profile string, cfg *config.Config, sshKeyName, sshCIDR string) (*provider.Instance, error) {
+func runInfraCreate(ctx context.Context, profile string, cfg *config.Config, opts createOptions) (*provider.Instance, error) {
 	if cfg == nil {
 		return nil, errors.New("config is required")
 	}
 
-	prov := newAWSProvider(profile, cfg.Compute.Class)
-	image, err := resolveInfraImage(ctx, prov, cfg)
+	networkMode := effectiveNetworkMode(cfg)
+	if networkMode == "" {
+		networkMode = "public"
+	}
+	if networkMode == "private" {
+		return nil, errors.New("private networking is not supported yet; use public networking or add an SSM/bastion executor")
+	}
+	if !config.IsValidNetworkMode(networkMode) {
+		return nil, fmt.Errorf("unsupported network mode %q", networkMode)
+	}
+
+	sshKeyName, sshCIDR, sshUser, sshKeyPath, err := resolveProvisioningSSH(ctx, cfg, opts)
 	if err != nil {
 		return nil, err
 	}
-	req := provider.CreateInstanceRequest{
-		Region:           cfg.Region.Name,
-		InstanceType:     cfg.Instance.Type,
-		Image:            image.ID,
-		ImageName:        image.Name,
-		DiskSizeGB:       cfg.Instance.DiskSizeGB,
-		NetworkMode:      cfg.Sandbox.NetworkMode,
-		ConnectionMethod: connectionMethodFor(sshKeyName, cfg.Sandbox.NetworkMode),
-		SSHKeyName:       sshKeyName,
-		SSHCIDR:          sshCIDR,
+	if strings.TrimSpace(sshKeyPath) == "" {
+		return nil, errors.New("ssh private key path is required for public networking")
 	}
-	return prov.CreateInstance(ctx, req)
+
+	adviser := newAWSProvider(profile, cfg.Compute.Class)
+	image, err := resolveInfraImage(ctx, adviser, cfg)
+	if err != nil {
+		return nil, err
+	}
+	instanceType := strings.TrimSpace(cfg.Instance.Type)
+	if instanceType == "" {
+		recs, recErr := adviser.RecommendInstanceTypes(ctx, cfg.Region.Name, cfg.Compute.Class)
+		if recErr != nil {
+			return nil, recErr
+		}
+		if len(recs) == 0 {
+			return nil, errors.New("no recommended instance types available")
+		}
+		instanceType = recs[0].Name
+	}
+
+	workdir, err := prepareTerraformWorkdir()
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(workdir)
+
+	varsPath, err := writeTerraformVars(workdir, terraformVars{
+		Region:       cfg.Region.Name,
+		ComputeClass: config.EffectiveComputeClass(cfg.Compute.Class),
+		InstanceType: instanceType,
+		DiskSizeGB:   cfg.Instance.DiskSizeGB,
+		NetworkMode:  networkMode,
+		ImageID:      image.ID,
+		SSHKeyName:   sshKeyName,
+		SSHCIDR:      sshCIDR,
+		SSHUser:      sshUser,
+		NamePrefix:   "openclaw",
+		UseNemoClaw:  cfg.Sandbox.UseNemoClaw,
+		NIMEndpoint:  cfg.Runtime.Endpoint,
+		Model:        cfg.Runtime.Model,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	backend, err := newTerraformBackend(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := backend.Init(ctx, workdir); err != nil {
+		return nil, err
+	}
+	if err := backend.Plan(ctx, workdir, varsPath); err != nil {
+		return nil, err
+	}
+	if err := backend.Apply(ctx, workdir, varsPath); err != nil {
+		return nil, err
+	}
+	output, err := backend.Output(ctx, workdir)
+	if err != nil {
+		return nil, err
+	}
+	return infraOutputToInstance(output, networkMode, sshUser, image), nil
 }
 
 func runInstallWorkflow(ctx context.Context, profile string, cfg *config.Config, opts installOptions) (runtimeinstall.Result, string, error) {
@@ -87,20 +169,28 @@ func runInstallWorkflow(ctx context.Context, profile string, cfg *config.Config,
 		return runtimeinstall.Result{}, "", errors.New("target is required")
 	}
 
+	networkMode := effectiveNetworkMode(cfg)
+	if networkMode == "private" {
+		return runtimeinstall.Result{}, "", errors.New("private networking is not supported yet; install requires SSH access to the instance")
+	}
+	if !config.IsValidNetworkMode(networkMode) && networkMode != "" {
+		return runtimeinstall.Result{}, "", fmt.Errorf("unsupported network mode %q", networkMode)
+	}
+
 	resolvedTarget, err := resolveHostTarget(ctx, profile, cfg, opts.Target)
 	if err != nil {
 		return runtimeinstall.Result{}, "", err
 	}
 
-	user := strings.TrimSpace(opts.SSHUser)
-	if user == "" {
-		user = sshUsernameForImage(cfg.Image.Name, cfg.Image.ID)
+	user, keyPath, err := resolveInstallSSH(cfg, opts.SSHUser, opts.SSHKey)
+	if err != nil {
+		return runtimeinstall.Result{}, "", err
 	}
 	exec := newSSHExecutor(host.SSHConfig{
 		Host:           resolvedTarget,
 		Port:           opts.SSHPort,
 		User:           user,
-		IdentityFile:   strings.TrimSpace(opts.SSHKey),
+		IdentityFile:   keyPath,
 		ConnectTimeout: 15 * time.Second,
 	})
 
@@ -143,15 +233,15 @@ func runVerifyWorkflow(ctx context.Context, profile string, cfg *config.Config, 
 		return verify.Report{}, "", err
 	}
 
-	user := strings.TrimSpace(opts.SSHUser)
-	if user == "" && cfg != nil {
-		user = sshUsernameForImage(cfg.Image.Name, cfg.Image.ID)
+	user, keyPath, err := resolveInstallSSH(cfg, opts.SSHUser, opts.SSHKey)
+	if err != nil {
+		return verify.Report{}, "", err
 	}
 	exec := newSSHExecutor(host.SSHConfig{
 		Host:           resolvedTarget,
 		Port:           opts.SSHPort,
 		User:           user,
-		IdentityFile:   strings.TrimSpace(opts.SSHKey),
+		IdentityFile:   keyPath,
 		ConnectTimeout: 15 * time.Second,
 	})
 
@@ -164,7 +254,7 @@ func runVerifyWorkflow(ctx context.Context, profile string, cfg *config.Config, 
 }
 
 func runCreateWorkflow(ctx context.Context, profile string, cfg *config.Config, opts createOptions) (*provider.Instance, runtimeinstall.Result, verify.Report, error) {
-	instance, err := runInfraCreate(ctx, profile, cfg, opts.SSHKeyName, opts.SSHCIDR)
+	instance, err := runInfraCreate(ctx, profile, cfg, opts)
 	if err != nil {
 		return nil, runtimeinstall.Result{}, verify.Report{}, err
 	}
@@ -226,6 +316,155 @@ func resolveHostTarget(ctx context.Context, profile string, cfg *config.Config, 
 
 func resolveVerifyTarget(ctx context.Context, profile string, cfg *config.Config, target string) (string, error) {
 	return resolveHostTarget(ctx, profile, cfg, target)
+}
+
+func effectiveNetworkMode(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	if mode := strings.TrimSpace(cfg.Instance.NetworkMode); mode != "" {
+		return strings.ToLower(mode)
+	}
+	return strings.ToLower(strings.TrimSpace(cfg.Sandbox.NetworkMode))
+}
+
+func resolveProvisioningSSH(ctx context.Context, cfg *config.Config, opts createOptions) (string, string, string, string, error) {
+	if cfg == nil {
+		return "", "", "", "", errors.New("config is required")
+	}
+
+	sshKeyName := strings.TrimSpace(opts.SSHKeyName)
+	if sshKeyName == "" {
+		sshKeyName = strings.TrimSpace(cfg.SSH.KeyName)
+	}
+	if sshKeyName == "" {
+		return "", "", "", "", errors.New("ssh key pair name is required for public networking; set ssh.key_name or pass --ssh-key-name")
+	}
+	sshCIDR := strings.TrimSpace(opts.SSHCIDR)
+	if sshCIDR == "" {
+		sshCIDR = strings.TrimSpace(cfg.SSH.CIDR)
+	}
+	if sshCIDR == "" && sshKeyName != "" {
+		var err error
+		sshCIDR, err = resolveSSHCIDR(ctx, sshKeyName, sshCIDR)
+		if err != nil {
+			return "", "", "", "", err
+		}
+	}
+	sshUser := strings.TrimSpace(opts.SSHUser)
+	if sshUser == "" {
+		sshUser = strings.TrimSpace(cfg.SSH.User)
+	}
+	if sshUser == "" {
+		sshUser = sshUsernameForImage(cfg.Image.Name, cfg.Image.ID)
+	}
+	sshKeyPath := strings.TrimSpace(opts.SSHKey)
+	if sshKeyPath == "" {
+		sshKeyPath = strings.TrimSpace(cfg.SSH.PrivateKeyPath)
+	}
+	if sshKeyPath == "" {
+		return "", "", "", "", errors.New("ssh private key path is required for public networking; set ssh.private_key_path or pass --ssh-key")
+	}
+
+	return sshKeyName, sshCIDR, sshUser, sshKeyPath, nil
+}
+
+func resolveInstallSSH(cfg *config.Config, userFlag, keyFlag string) (string, string, error) {
+	if cfg == nil {
+		return "", "", errors.New("config is required")
+	}
+	user := strings.TrimSpace(userFlag)
+	if user == "" {
+		user = strings.TrimSpace(cfg.SSH.User)
+	}
+	if user == "" {
+		user = sshUsernameForImage(cfg.Image.Name, cfg.Image.ID)
+	}
+	keyPath := strings.TrimSpace(keyFlag)
+	if keyPath == "" {
+		keyPath = strings.TrimSpace(cfg.SSH.PrivateKeyPath)
+	}
+	if keyPath == "" {
+		return "", "", errors.New("ssh private key path is required; pass --ssh-key or set ssh.private_key_path in config")
+	}
+	return user, keyPath, nil
+}
+
+func prepareTerraformWorkdir() (string, error) {
+	workdir, err := os.MkdirTemp("", "openclaw-terraform-*")
+	if err != nil {
+		return "", fmt.Errorf("create terraform workspace: %w", err)
+	}
+	return workdir, nil
+}
+
+func resolveTerraformModuleDir(cfg *config.Config) (string, error) {
+	if cfg == nil {
+		return "", errors.New("config is required")
+	}
+	moduleDir := strings.TrimSpace(cfg.Infra.ModuleDir)
+	if moduleDir == "" {
+		moduleDir = filepath.Join("infra", "aws", "ec2")
+	}
+	if !filepath.IsAbs(moduleDir) {
+		abs, err := filepath.Abs(moduleDir)
+		if err != nil {
+			return "", fmt.Errorf("resolve terraform module dir %q: %w", moduleDir, err)
+		}
+		moduleDir = abs
+	}
+	return moduleDir, nil
+}
+
+func writeTerraformVars(workdir string, vars terraformVars) (string, error) {
+	data, err := json.MarshalIndent(vars, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("marshal terraform vars: %w", err)
+	}
+	path := filepath.Join(workdir, "openclaw.auto.tfvars.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return "", fmt.Errorf("write terraform vars: %w", err)
+	}
+	return path, nil
+}
+
+func newTerraformBackend(cfg *config.Config) (infratf.InfraBackend, error) {
+	if cfg == nil {
+		return nil, errors.New("config is required")
+	}
+	moduleDir, err := resolveTerraformModuleDir(cfg)
+	if err != nil {
+		return nil, err
+	}
+	backend := infratf.New(moduleDir)
+	return backend, nil
+}
+
+func infraOutputToInstance(output *infratf.InfraOutput, networkMode, sshUser string, image provider.BaseImage) *provider.Instance {
+	if output == nil {
+		return nil
+	}
+	instance := &provider.Instance{
+		ID:                 strings.TrimSpace(output.InstanceID),
+		Name:               strings.TrimSpace(output.InstanceID),
+		Region:             strings.TrimSpace(output.Region),
+		PublicIP:           strings.TrimSpace(output.PublicIP),
+		PrivateIP:          strings.TrimSpace(output.PrivateIP),
+		ConnectionInfo:     strings.TrimSpace(output.ConnectionInfo),
+		SecurityGroupID:    strings.TrimSpace(output.SecurityGroupID),
+		SecurityGroupRules: append([]string(nil), output.SecurityGroupRules...),
+	}
+	if instance.ConnectionInfo == "" {
+		if instance.PublicIP != "" && strings.EqualFold(networkMode, "public") {
+			instance.ConnectionInfo = fmt.Sprintf("ssh -i <your-key>.pem %s@%s", sshUser, instance.PublicIP)
+		} else if instance.PrivateIP != "" {
+			instance.ConnectionInfo = fmt.Sprintf("private IP access: %s", instance.PrivateIP)
+		}
+	}
+	if instance.ConnectionInfo == "" && image.ID != "" {
+		instance.ConnectionInfo = fmt.Sprintf("instance ready for %s", image.Name)
+	}
+	return instance
 }
 
 func instanceTarget(instance *provider.Instance) string {
