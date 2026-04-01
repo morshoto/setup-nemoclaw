@@ -9,12 +9,18 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"openclaw/internal/config"
 	"openclaw/internal/host"
 )
 
 var BuildRuntimeBinaryFunc = buildRuntimeBinary
+
+const (
+	defaultRuntimeIdleTimeout         = 24 * time.Hour
+	defaultRuntimeIdleShutdownCommand = "shutdown -h now"
+)
 
 // Request describes a runtime installation job.
 type Request struct {
@@ -206,7 +212,13 @@ func (i Installer) installService(ctx context.Context, req Request, workingDir s
 	if listenPort <= 0 {
 		listenPort = 8080
 	}
-	unitContents := renderSystemdUnit(remoteBinaryPath, pathJoin(workingDir, "runtime.yaml"), listenPort)
+	unitContents := renderSystemdUnit(
+		remoteBinaryPath,
+		pathJoin(workingDir, "runtime.yaml"),
+		listenPort,
+		defaultRuntimeIdleTimeout,
+		defaultRuntimeIdleShutdownCommand,
+	)
 
 	tmpDir, err := os.MkdirTemp("", "openclaw-systemd-*")
 	if err != nil {
@@ -259,9 +271,16 @@ func buildRuntimeBinary(ctx context.Context) (string, error) {
 	return outputPath, nil
 }
 
-func renderSystemdUnit(binaryPath, runtimeConfigPath string, listenPort int) string {
+func renderSystemdUnit(binaryPath, runtimeConfigPath string, listenPort int, idleTimeout time.Duration, idleShutdownCommand string) string {
 	if listenPort <= 0 {
 		listenPort = 8080
+	}
+	idleArgs := ""
+	if idleTimeout > 0 {
+		idleArgs = fmt.Sprintf(" --idle-timeout %s", idleTimeout)
+	}
+	if strings.TrimSpace(idleShutdownCommand) != "" {
+		idleArgs += fmt.Sprintf(" --idle-shutdown-command %q", strings.TrimSpace(idleShutdownCommand))
 	}
 	return fmt.Sprintf(`[Unit]
 Description=OpenClaw runtime
@@ -271,13 +290,13 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/openclaw
-ExecStart=%s serve --runtime-config %s --listen 0.0.0.0:%d
+ExecStart=%s serve --runtime-config %s --listen 0.0.0.0:%d%s
 Restart=always
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-`, binaryPath, runtimeConfigPath, listenPort)
+`, binaryPath, runtimeConfigPath, listenPort, idleArgs)
 }
 
 func pathJoin(elem ...string) string {

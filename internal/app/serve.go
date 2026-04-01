@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os/exec"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -94,16 +94,16 @@ func runRuntimeServer(ctx context.Context, addr, runtimeConfigPath string, runti
 		touch()
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"status":            "ok",
-			"runtime_config":    runtimeConfigPath,
-			"listen":            addr,
-			"use_nemoclaw":      runtimeCfg.UseNemoClaw,
-			"nim_endpoint":      runtimeCfg.NIMEndpoint,
-			"model":             runtimeCfg.Model,
-			"configured_port":   runtimeCfg.Port,
-			"sandbox_enabled":   runtimeCfg.Sandbox.Enabled,
-			"sandbox_network":   runtimeCfg.Sandbox.NetworkMode,
-			"filesystem_allow":  runtimeCfg.Sandbox.FilesystemAllow,
+			"status":           "ok",
+			"runtime_config":   runtimeConfigPath,
+			"listen":           addr,
+			"use_nemoclaw":     runtimeCfg.UseNemoClaw,
+			"nim_endpoint":     runtimeCfg.NIMEndpoint,
+			"model":            runtimeCfg.Model,
+			"configured_port":  runtimeCfg.Port,
+			"sandbox_enabled":  runtimeCfg.Sandbox.Enabled,
+			"sandbox_network":  runtimeCfg.Sandbox.NetworkMode,
+			"filesystem_allow": runtimeCfg.Sandbox.FilesystemAllow,
 		})
 	})
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {

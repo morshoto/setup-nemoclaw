@@ -88,8 +88,8 @@ func TestPrereqCheckerSkipsGPUChecksForCPUComputeClass(t *testing.T) {
 }
 
 func TestInstallerUploadsConfigAndRunsScript(t *testing.T) {
-	originalBuildRuntimeBinary := buildRuntimeBinaryFunc
-	buildRuntimeBinaryFunc = func(ctx context.Context) (string, error) {
+	originalBuildRuntimeBinary := BuildRuntimeBinaryFunc
+	BuildRuntimeBinaryFunc = func(ctx context.Context) (string, error) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "openclaw")
 		if err := os.WriteFile(path, []byte("binary"), 0o700); err != nil {
@@ -97,7 +97,7 @@ func TestInstallerUploadsConfigAndRunsScript(t *testing.T) {
 		}
 		return path, nil
 	}
-	defer func() { buildRuntimeBinaryFunc = originalBuildRuntimeBinary }()
+	defer func() { BuildRuntimeBinaryFunc = originalBuildRuntimeBinary }()
 
 	exec := &fakeExecutor{
 		results: map[string]host.CommandResult{
@@ -130,8 +130,8 @@ func TestInstallerUploadsConfigAndRunsScript(t *testing.T) {
 }
 
 func TestInstallerSkipsGPUChecksForCPUComputeClass(t *testing.T) {
-	originalBuildRuntimeBinary := buildRuntimeBinaryFunc
-	buildRuntimeBinaryFunc = func(ctx context.Context) (string, error) {
+	originalBuildRuntimeBinary := BuildRuntimeBinaryFunc
+	BuildRuntimeBinaryFunc = func(ctx context.Context) (string, error) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "openclaw")
 		if err := os.WriteFile(path, []byte("binary"), 0o700); err != nil {
@@ -139,7 +139,7 @@ func TestInstallerSkipsGPUChecksForCPUComputeClass(t *testing.T) {
 		}
 		return path, nil
 	}
-	defer func() { buildRuntimeBinaryFunc = originalBuildRuntimeBinary }()
+	defer func() { BuildRuntimeBinaryFunc = originalBuildRuntimeBinary }()
 
 	exec := &fakeExecutor{
 		results: map[string]host.CommandResult{

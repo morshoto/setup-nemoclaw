@@ -15,6 +15,7 @@ import (
 	infratf "openclaw/internal/infra/terraform"
 	"openclaw/internal/provider"
 	awsprovider "openclaw/internal/provider/aws"
+	"openclaw/internal/runtimeinstall"
 )
 
 func TestConfigValidateCommandAcceptsConfigFlagAfterSubcommand(t *testing.T) {
@@ -304,8 +305,8 @@ func TestInstallCommandRunsWorkflowAgainstResolvedInstance(t *testing.T) {
 	restore := stubAWSProviderFactory()
 	defer restore()
 
-	originalBuildRuntimeBinary := buildRuntimeBinaryFunc
-	buildRuntimeBinaryFunc = func(ctx context.Context) (string, error) {
+	originalBuildRuntimeBinary := runtimeinstall.BuildRuntimeBinaryFunc
+	runtimeinstall.BuildRuntimeBinaryFunc = func(ctx context.Context) (string, error) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "openclaw")
 		if err := os.WriteFile(path, []byte("binary"), 0o700); err != nil {
@@ -313,7 +314,7 @@ func TestInstallCommandRunsWorkflowAgainstResolvedInstance(t *testing.T) {
 		}
 		return path, nil
 	}
-	defer func() { buildRuntimeBinaryFunc = originalBuildRuntimeBinary }()
+	defer func() { runtimeinstall.BuildRuntimeBinaryFunc = originalBuildRuntimeBinary }()
 
 	originalExecutor := newSSHExecutor
 	newSSHExecutor = func(cfg host.SSHConfig) host.Executor {
@@ -489,8 +490,8 @@ func TestCreateCommandRunsEndToEndWorkflow(t *testing.T) {
 	restore := stubAWSProviderFactory()
 	defer restore()
 
-	originalBuildRuntimeBinary := buildRuntimeBinaryFunc
-	buildRuntimeBinaryFunc = func(ctx context.Context) (string, error) {
+	originalBuildRuntimeBinary := runtimeinstall.BuildRuntimeBinaryFunc
+	runtimeinstall.BuildRuntimeBinaryFunc = func(ctx context.Context) (string, error) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "openclaw")
 		if err := os.WriteFile(path, []byte("binary"), 0o700); err != nil {
@@ -498,7 +499,7 @@ func TestCreateCommandRunsEndToEndWorkflow(t *testing.T) {
 		}
 		return path, nil
 	}
-	defer func() { buildRuntimeBinaryFunc = originalBuildRuntimeBinary }()
+	defer func() { runtimeinstall.BuildRuntimeBinaryFunc = originalBuildRuntimeBinary }()
 
 	originalBackend := newTerraformBackend
 	originalDeriveSSHPublicKey := deriveSSHPublicKeyFunc
