@@ -81,6 +81,18 @@ type terraformVars struct {
 	SourceURL       string `json:"source_archive_url"`
 }
 
+type terraformInputs struct {
+	NetworkMode     string
+	RuntimePort     int
+	RuntimeCIDR     string
+	RuntimeProvider string
+	SSHKeyName      string
+	SSHPublicKey    string
+	SSHCIDR         string
+	SSHUser         string
+	SourceURL       string
+}
+
 type verifyOptions struct {
 	Target            string
 	SSHUser           string
@@ -94,37 +106,10 @@ func runInfraCreate(ctx context.Context, profile string, cfg *config.Config, opt
 		return nil, errors.New("config is required")
 	}
 
-	networkMode := effectiveNetworkMode(cfg)
-	if networkMode == "" {
-		networkMode = "public"
-	}
-	if networkMode == "private" {
-		return nil, errors.New("private networking is not supported yet; use public networking or add an SSM/bastion executor")
-	}
-	if !config.IsValidNetworkMode(networkMode) {
-		return nil, fmt.Errorf("unsupported network mode %q", networkMode)
-	}
-
-	sshKeyName, sshCIDR, sshUser, sshKeyPath, err := resolveProvisioningSSH(ctx, cfg, opts)
+	inputs, err := buildTerraformInputs(ctx, profile, cfg, opts)
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(sshKeyPath) == "" {
-		return nil, errors.New("ssh private key path is required for public networking")
-	}
-	sshPublicKey, err := deriveSSHPublicKeyFunc(ctx, sshKeyPath)
-	if err != nil {
-		return nil, err
-	}
-	sourceURL, _, err := resolveSourceArchiveURLFunc(ctx, profile, cfg.Region.Name)
-	if err != nil {
-		return nil, err
-	}
-	runtimePort := cfg.Runtime.Port
-	if runtimePort <= 0 {
-		runtimePort = 8080
-	}
-	runtimeCIDR := resolveRuntimeCIDR(cfg)
 
 	adviser := newAWSProvider(profile, cfg.Compute.Class)
 	if _, err := adviser.CheckAuth(ctx); err != nil {
@@ -157,20 +142,20 @@ func runInfraCreate(ctx context.Context, profile string, cfg *config.Config, opt
 		ComputeClass:    config.EffectiveComputeClass(cfg.Compute.Class),
 		InstanceType:    instanceType,
 		DiskSizeGB:      cfg.Instance.DiskSizeGB,
-		NetworkMode:     networkMode,
+		NetworkMode:     inputs.NetworkMode,
 		ImageID:         image.ID,
-		RuntimePort:     runtimePort,
-		RuntimeCIDR:     runtimeCIDR,
-		RuntimeProvider: strings.TrimSpace(cfg.Runtime.Provider),
-		SSHKeyName:      sshKeyName,
-		SSHPublicKey:    sshPublicKey,
-		SSHCIDR:         sshCIDR,
-		SSHUser:         sshUser,
+		RuntimePort:     inputs.RuntimePort,
+		RuntimeCIDR:     inputs.RuntimeCIDR,
+		RuntimeProvider: inputs.RuntimeProvider,
+		SSHKeyName:      inputs.SSHKeyName,
+		SSHPublicKey:    inputs.SSHPublicKey,
+		SSHCIDR:         inputs.SSHCIDR,
+		SSHUser:         inputs.SSHUser,
 		NamePrefix:      "openclaw",
 		UseNemoClaw:     cfg.Sandbox.UseNemoClaw,
 		NIMEndpoint:     cfg.Runtime.Endpoint,
 		Model:           cfg.Runtime.Model,
-		SourceURL:       sourceURL,
+		SourceURL:       inputs.SourceURL,
 	})
 	if err != nil {
 		return nil, err
@@ -193,7 +178,7 @@ func runInfraCreate(ctx context.Context, profile string, cfg *config.Config, opt
 	if err != nil {
 		return nil, err
 	}
-	return infraOutputToInstance(output, networkMode, sshUser, image), nil
+	return infraOutputToInstance(output, inputs.NetworkMode, inputs.SSHUser, image), nil
 }
 
 func runInstallWorkflow(ctx context.Context, profile string, cfg *config.Config, opts installOptions) (runtimeinstall.Result, string, error) {
@@ -254,6 +239,55 @@ func runInstallWorkflow(ctx context.Context, profile string, cfg *config.Config,
 		CodexAPIKey:  codexAPIKey,
 	})
 	return result, resolvedTarget, err
+}
+
+func buildTerraformInputs(ctx context.Context, profile string, cfg *config.Config, opts createOptions) (terraformInputs, error) {
+	if cfg == nil {
+		return terraformInputs{}, errors.New("config is required")
+	}
+
+	networkMode := effectiveNetworkMode(cfg)
+	if networkMode == "" {
+		networkMode = "public"
+	}
+	if networkMode == "private" {
+		return terraformInputs{}, errors.New("private networking is not supported yet; use public networking or add an SSM/bastion executor")
+	}
+	if !config.IsValidNetworkMode(networkMode) {
+		return terraformInputs{}, fmt.Errorf("unsupported network mode %q", networkMode)
+	}
+
+	sshKeyName, sshCIDR, sshUser, sshKeyPath, err := resolveProvisioningSSH(ctx, cfg, opts)
+	if err != nil {
+		return terraformInputs{}, err
+	}
+	if strings.TrimSpace(sshKeyPath) == "" {
+		return terraformInputs{}, errors.New("ssh private key path is required for public networking")
+	}
+	sshPublicKey, err := deriveSSHPublicKeyFunc(ctx, sshKeyPath)
+	if err != nil {
+		return terraformInputs{}, err
+	}
+	sourceURL, _, err := resolveSourceArchiveURLFunc(ctx, profile, cfg.Region.Name)
+	if err != nil {
+		return terraformInputs{}, err
+	}
+	runtimePort := cfg.Runtime.Port
+	if runtimePort <= 0 {
+		runtimePort = 8080
+	}
+
+	return terraformInputs{
+		NetworkMode:     networkMode,
+		RuntimePort:     runtimePort,
+		RuntimeCIDR:     resolveRuntimeCIDR(cfg),
+		RuntimeProvider: strings.TrimSpace(cfg.Runtime.Provider),
+		SSHKeyName:      sshKeyName,
+		SSHPublicKey:    sshPublicKey,
+		SSHCIDR:         sshCIDR,
+		SSHUser:         sshUser,
+		SourceURL:       sourceURL,
+	}, nil
 }
 
 func runVerifyWorkflow(ctx context.Context, profile string, cfg *config.Config, opts verifyOptions) (verify.Report, string, error) {

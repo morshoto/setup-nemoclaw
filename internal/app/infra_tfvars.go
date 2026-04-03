@@ -119,27 +119,10 @@ func selectAWSProfile(ctx context.Context, in io.Reader, out io.Writer, existing
 }
 
 func buildTerraformVars(ctx context.Context, profile string, cfg *config.Config) (terraformVars, error) {
-	if cfg == nil {
-		return terraformVars{}, errors.New("config is required")
-	}
-
-	sshKeyName, sshCIDR, sshUser, sshKeyPath, err := resolveProvisioningSSH(ctx, cfg, createOptions{})
+	inputs, err := buildTerraformInputs(ctx, profile, cfg, createOptions{})
 	if err != nil {
 		return terraformVars{}, err
 	}
-	sshPublicKey, err := deriveSSHPublicKeyFunc(ctx, sshKeyPath)
-	if err != nil {
-		return terraformVars{}, err
-	}
-	sourceURL, _, err := resolveSourceArchiveURLFunc(ctx, profile, cfg.Region.Name)
-	if err != nil {
-		return terraformVars{}, err
-	}
-	runtimePort := cfg.Runtime.Port
-	if runtimePort <= 0 {
-		runtimePort = 8080
-	}
-	runtimeCIDR := resolveRuntimeCIDR(cfg)
 
 	return terraformVars{
 		AWSProfile:      strings.TrimSpace(profile),
@@ -147,21 +130,21 @@ func buildTerraformVars(ctx context.Context, profile string, cfg *config.Config)
 		ComputeClass:    config.EffectiveComputeClass(cfg.Compute.Class),
 		InstanceType:    strings.TrimSpace(cfg.Instance.Type),
 		DiskSizeGB:      cfg.Instance.DiskSizeGB,
-		NetworkMode:     config.EffectiveNetworkMode(cfg),
+		NetworkMode:     inputs.NetworkMode,
 		ImageName:       strings.TrimSpace(cfg.Image.Name),
 		ImageID:         strings.TrimSpace(cfg.Image.ID),
-		RuntimePort:     runtimePort,
-		RuntimeCIDR:     runtimeCIDR,
-		RuntimeProvider: strings.TrimSpace(cfg.Runtime.Provider),
-		SSHKeyName:      sshKeyName,
-		SSHPublicKey:    sshPublicKey,
-		SSHCIDR:         sshCIDR,
-		SSHUser:         sshUser,
+		RuntimePort:     inputs.RuntimePort,
+		RuntimeCIDR:     inputs.RuntimeCIDR,
+		RuntimeProvider: inputs.RuntimeProvider,
+		SSHKeyName:      inputs.SSHKeyName,
+		SSHPublicKey:    inputs.SSHPublicKey,
+		SSHCIDR:         inputs.SSHCIDR,
+		SSHUser:         inputs.SSHUser,
 		NamePrefix:      "openclaw",
 		UseNemoClaw:     cfg.Sandbox.UseNemoClaw,
 		NIMEndpoint:     cfg.Runtime.Endpoint,
 		Model:           cfg.Runtime.Model,
-		SourceURL:       sourceURL,
+		SourceURL:       inputs.SourceURL,
 	}, nil
 }
 
