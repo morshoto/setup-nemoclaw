@@ -621,7 +621,7 @@ sandbox:
 		t.Fatalf("Execute() error = %v", err)
 	}
 	got := stdout.String()
-	for _, fragment := range []string{"instance id: i-0123456789abcdef0", "verification summary", "all required checks passed"} {
+	for _, fragment := range []string{"instance id: i-0123456789abcdef0", "verification summary", "all required checks passed", "health url: http://203.0.113.10:8080/healthz"} {
 		if !strings.Contains(got, fragment) {
 			t.Fatalf("stdout = %q, want %q", got, fragment)
 		}

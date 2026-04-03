@@ -2,7 +2,6 @@ package app
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -46,7 +45,7 @@ func newCreateCommand(app *App) *cobra.Command {
 
 			logger := loggerFromContext(cmd.Context())
 			logger.Info("starting create workflow")
-			fmt.Fprintln(cmd.OutOrStdout(), "running create workflow...")
+			progress := newProgressRenderer(cmd.OutOrStdout())
 			instance, installResult, verifyReport, err := runCreateWorkflow(cmd.Context(), app.opts.Profile, cfg, createOptions{
 				SSHKeyName:      sshKeyName,
 				SSHCIDR:         sshCIDR,
@@ -57,8 +56,7 @@ func newCreateCommand(app *App) *cobra.Command {
 				Port:            port,
 				UseNemoClaw:     useNemoClaw,
 				DisableNemoClaw: disableNemoClaw,
-			})
-			printWorkflowSuccess(cmd.OutOrStdout(), instance, installResult, verifyReport, app.opts.ConfigPath, cfg, instanceTarget(instance), true)
+			}, progress)
 			if err != nil {
 				return wrapUserFacingError(
 					"create workflow failed",
@@ -68,6 +66,7 @@ func newCreateCommand(app *App) *cobra.Command {
 					"re-run the failed stage directly once the host is ready",
 				)
 			}
+			printWorkflowSuccess(cmd.OutOrStdout(), instance, installResult, verifyReport, app.opts.ConfigPath, cfg, instanceTarget(instance), true)
 			return nil
 		},
 	}

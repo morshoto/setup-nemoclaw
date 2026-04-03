@@ -299,10 +299,18 @@ func runVerifyWorkflow(ctx context.Context, profile string, cfg *config.Config, 
 	return report, resolvedTarget, err
 }
 
-func runCreateWorkflow(ctx context.Context, profile string, cfg *config.Config, opts createOptions) (*provider.Instance, runtimeinstall.Result, verify.Report, error) {
-	instance, err := runInfraCreate(ctx, profile, cfg, opts)
-	if err != nil {
-		return nil, runtimeinstall.Result{}, verify.Report{}, err
+func runCreateWorkflow(ctx context.Context, profile string, cfg *config.Config, opts createOptions, progress stageRunner) (*provider.Instance, runtimeinstall.Result, verify.Report, error) {
+	if progress == nil {
+		progress = newProgressRenderer(io.Discard)
+	}
+
+	var instance *provider.Instance
+	if err := progress.Run(ctx, "provisioning infrastructure", func() error {
+		var err error
+		instance, err = runInfraCreate(ctx, profile, cfg, opts)
+		return err
+	}); err != nil {
+		return instance, runtimeinstall.Result{}, verify.Report{}, err
 	}
 
 	target := instanceTarget(instance)
@@ -310,17 +318,24 @@ func runCreateWorkflow(ctx context.Context, profile string, cfg *config.Config, 
 		WorkingDir: "/opt/openclaw",
 		ConfigPath: "/opt/openclaw/runtime.yaml",
 	}
-	if err := waitForBootstrapReady(ctx, cfg, target, opts.SSHUser, opts.SSHKey, opts.SSHPort); err != nil {
+	if err := progress.Run(ctx, "waiting for bootstrap", func() error {
+		return waitForBootstrapReady(ctx, cfg, target, opts.SSHUser, opts.SSHKey, opts.SSHPort)
+	}); err != nil {
 		return instance, installResult, verify.Report{}, err
 	}
-	verifyReport, _, err := runVerifyWorkflow(ctx, profile, cfg, verifyOptions{
-		Target:            target,
-		SSHUser:           opts.SSHUser,
-		SSHKey:            opts.SSHKey,
-		SSHPort:           opts.SSHPort,
-		RuntimeConfigPath: installResult.ConfigPath,
-	})
-	if err != nil {
+
+	var verifyReport verify.Report
+	if err := progress.Run(ctx, "verifying runtime", func() error {
+		var err error
+		verifyReport, _, err = runVerifyWorkflow(ctx, profile, cfg, verifyOptions{
+			Target:            target,
+			SSHUser:           opts.SSHUser,
+			SSHKey:            opts.SSHKey,
+			SSHPort:           opts.SSHPort,
+			RuntimeConfigPath: installResult.ConfigPath,
+		})
+		return err
+	}); err != nil {
 		return instance, installResult, verify.Report{}, err
 	}
 	return instance, installResult, verifyReport, nil
@@ -644,6 +659,9 @@ func printWorkflowSuccess(out io.Writer, instance *provider.Instance, installRes
 	if strings.TrimSpace(target) != "" {
 		fmt.Fprintf(out, "connection target: %s\n", target)
 	}
+	if url := runtimeHealthURL(instance, cfg); strings.TrimSpace(url) != "" {
+		fmt.Fprintf(out, "health url: %s\n", url)
+	}
 	if strings.TrimSpace(installResult.WorkingDir) != "" {
 		fmt.Fprintf(out, "working directory: %s\n", installResult.WorkingDir)
 	}
@@ -660,6 +678,21 @@ func printWorkflowSuccess(out io.Writer, instance *provider.Instance, installRes
 		fmt.Fprintf(out, "install command example: openclaw install --config %s --target %s\n", cfgPath, target)
 	}
 	fmt.Fprintln(out, "next step: keep the runtime config and SSH target handy for future verify runs")
+}
+
+func runtimeHealthURL(instance *provider.Instance, cfg *config.Config) string {
+	if instance == nil {
+		return ""
+	}
+	host := strings.TrimSpace(instance.PublicIP)
+	if host == "" {
+		return ""
+	}
+	port := 8080
+	if cfg != nil && cfg.Runtime.Port > 0 {
+		port = cfg.Runtime.Port
+	}
+	return fmt.Sprintf("http://%s:%d/healthz", host, port)
 }
 
 func printVerificationReport(out io.Writer, report verify.Report) {

@@ -177,9 +177,8 @@ func newInitCommand(app *App) *cobra.Command {
 
 			logger := loggerFromContext(cmd.Context())
 			logger.Info("starting init provision flow")
-			fmt.Fprintln(cmd.OutOrStdout(), "provisioning infrastructure...")
-			instance, installResult, verifyReport, err := runCreateWorkflow(cmd.Context(), app.opts.Profile, cfg, createOptions{})
-			printWorkflowSuccess(cmd.OutOrStdout(), instance, installResult, verifyReport, outputPath, cfg, instanceTarget(instance), true)
+			progress := newProgressRenderer(cmd.OutOrStdout())
+			instance, installResult, verifyReport, err := runCreateWorkflow(cmd.Context(), app.opts.Profile, cfg, createOptions{}, progress)
 			if err != nil {
 				return wrapUserFacingError(
 					"init provisioning failed",
@@ -189,6 +188,7 @@ func newInitCommand(app *App) *cobra.Command {
 					"run `openclaw create --config "+outputPath+"` once the host is ready",
 				)
 			}
+			printWorkflowSuccess(cmd.OutOrStdout(), instance, installResult, verifyReport, outputPath, cfg, instanceTarget(instance), true)
 			return nil
 		},
 	}
