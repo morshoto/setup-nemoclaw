@@ -8,6 +8,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"golang.org/x/term"
 )
 
 var errCursorMenuUnavailable = errors.New("cursor menu unavailable")
@@ -151,6 +153,27 @@ func (s *Session) Text(label, defaultValue string) (string, error) {
 		return defaultValue, nil
 	}
 	return input, nil
+}
+
+func (s *Session) Secret(label, defaultValue string) (string, error) {
+	if !s.Interactive || s.inFile == nil || !isTerminalFile(s.inFile) {
+		return s.Text(label, defaultValue)
+	}
+
+	if defaultValue != "" {
+		fmt.Fprintf(s.out, "%s [%s]: ", s.style(ansiBrightCyan, label), s.style(ansiYellow, "configured"))
+	} else {
+		fmt.Fprintf(s.out, "%s: ", s.style(ansiBrightCyan, label))
+	}
+	value, err := term.ReadPassword(int(s.inFile.Fd()))
+	fmt.Fprintln(s.out)
+	if err != nil {
+		return "", err
+	}
+	if trimmed := strings.TrimSpace(string(value)); trimmed != "" {
+		return trimmed, nil
+	}
+	return defaultValue, nil
 }
 
 func (s *Session) Int(label string, defaultValue int) (int, error) {

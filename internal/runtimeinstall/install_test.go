@@ -46,6 +46,13 @@ func TestRenderRuntimeConfigIncludesOptionalFields(t *testing.T) {
 	}
 }
 
+func TestRenderSystemdUnitUsesRequestedPort(t *testing.T) {
+	got := renderSystemdUnit("/opt/openclaw/bin/openclaw", "/opt/openclaw/runtime.yaml", 9090, 0, "", "")
+	if !strings.Contains(got, "0.0.0.0:9090") {
+		t.Fatalf("rendered unit %q does not use requested port", got)
+	}
+}
+
 func TestPrereqCheckerUsesHostExecutor(t *testing.T) {
 	exec := &fakeExecutor{
 		results: map[string]host.CommandResult{
@@ -105,27 +112,40 @@ func TestInstallerUploadsConfigAndRunsScript(t *testing.T) {
 			"docker info":   {Stdout: "Docker Engine"},
 			"docker info --format {{json .Runtimes}}":                                                {Stdout: `{"nvidia":{}}`},
 			"docker run --rm --gpus all --pull=never nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi": {Stdout: "NVIDIA-SMI"},
-			"mkdir -p /opt/openclaw":                                 {},
-			"chmod +x /opt/openclaw/install.sh":                      {},
-			"sh /opt/openclaw/install.sh /opt/openclaw/runtime.yaml": {Stdout: "OpenClaw runtime installation complete"},
-			"systemctl daemon-reload":                                {},
-			"systemctl enable --now openclaw.service":                {},
+			"sudo mkdir -p /opt/openclaw":                                                            {},
+			"chmod +x /opt/openclaw/install.sh":                                                      {},
+			"sh /opt/openclaw/install.sh /opt/openclaw/runtime.yaml":                                 {Stdout: "OpenClaw runtime installation complete"},
+			"sudo mkdir -p /opt/openclaw/bin":                                                        {},
+			"sudo chown -R ubuntu:ubuntu /opt/openclaw":                                              {},
+			"sudo mv /opt/openclaw/openclaw.upload /opt/openclaw/bin/openclaw":                       {},
+			"chmod +x /opt/openclaw/bin/openclaw":                                                    {},
+			"sudo mv /opt/openclaw/openclaw.env.upload /opt/openclaw/openclaw.env":                   {},
+			"sudo chmod 600 /opt/openclaw/openclaw.env":                                              {},
+			"sudo mv /opt/openclaw/openclaw.service /etc/systemd/system/openclaw.service":            {},
+			"sudo systemctl daemon-reload":                                                           {},
+			"sudo systemctl enable --now openclaw.service":                                           {},
 		},
 	}
 
 	inst := Installer{Host: exec}
 	_, err := inst.Install(context.Background(), Request{
 		Config: &config.Config{
-			Runtime: config.RuntimeConfig{Endpoint: "http://localhost:11434", Model: "llama3.2"},
+			Runtime: config.RuntimeConfig{
+				Endpoint: "http://localhost:11434",
+				Model:    "llama3.2",
+				Provider: "codex",
+				Codex:    config.CodexConfig{SecretID: "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:openclaw/codex-api-key"},
+			},
 			Sandbox: config.SandboxConfig{Enabled: true, NetworkMode: "private", UseNemoClaw: true},
 		},
-		WorkingDir: "/opt/openclaw",
+		WorkingDir:  "/opt/openclaw",
+		CodexAPIKey: "sk-test",
 	})
 	if err != nil {
 		t.Fatalf("Install() error = %v", err)
 	}
-	if len(exec.uploads) != 4 {
-		t.Fatalf("uploads = %#v, want 4 uploads", exec.uploads)
+	if len(exec.uploads) != 5 {
+		t.Fatalf("uploads = %#v, want 5 uploads", exec.uploads)
 	}
 }
 
@@ -143,12 +163,17 @@ func TestInstallerSkipsGPUChecksForCPUComputeClass(t *testing.T) {
 
 	exec := &fakeExecutor{
 		results: map[string]host.CommandResult{
-			"docker info":                       {Stdout: "Docker Engine"},
-			"mkdir -p /opt/openclaw":            {},
-			"chmod +x /opt/openclaw/install.sh": {},
-			"sh /opt/openclaw/install.sh /opt/openclaw/runtime.yaml": {Stdout: "OpenClaw runtime installation complete"},
-			"systemctl daemon-reload":                                {},
-			"systemctl enable --now openclaw.service":                {},
+			"docker info":                                                                 {Stdout: "Docker Engine"},
+			"sudo mkdir -p /opt/openclaw":                                                 {},
+			"chmod +x /opt/openclaw/install.sh":                                           {},
+			"sh /opt/openclaw/install.sh /opt/openclaw/runtime.yaml":                      {Stdout: "OpenClaw runtime installation complete"},
+			"sudo mkdir -p /opt/openclaw/bin":                                             {},
+			"sudo chown -R ubuntu:ubuntu /opt/openclaw":                                   {},
+			"sudo mv /opt/openclaw/openclaw.upload /opt/openclaw/bin/openclaw":            {},
+			"chmod +x /opt/openclaw/bin/openclaw":                                         {},
+			"sudo mv /opt/openclaw/openclaw.service /etc/systemd/system/openclaw.service": {},
+			"sudo systemctl daemon-reload":                                                {},
+			"sudo systemctl enable --now openclaw.service":                                {},
 		},
 	}
 

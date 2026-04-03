@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"openclaw/internal/codexauth"
 	"openclaw/internal/config"
 	"openclaw/internal/host"
 	infratf "openclaw/internal/infra/terraform"
@@ -219,6 +220,10 @@ func runInstallWorkflow(ctx context.Context, profile string, cfg *config.Config,
 	if opts.DisableNemoClaw {
 		useNemo = false
 	}
+	codexAPIKey, err := resolveCodexAPIKey(ctx, profile, cfg)
+	if err != nil {
+		return runtimeinstall.Result{}, "", err
+	}
 
 	inst := runtimeinstall.Installer{Host: exec}
 	result, err := inst.Install(ctx, runtimeinstall.Request{
@@ -227,6 +232,7 @@ func runInstallWorkflow(ctx context.Context, profile string, cfg *config.Config,
 		Port:         opts.Port,
 		WorkingDir:   opts.WorkingDir,
 		ComputeClass: cfg.Compute.Class,
+		CodexAPIKey:  codexAPIKey,
 	})
 	return result, resolvedTarget, err
 }
@@ -303,6 +309,17 @@ func runCreateWorkflow(ctx context.Context, profile string, cfg *config.Config, 
 		RuntimeConfigPath: installResult.ConfigPath,
 	})
 	return instance, installResult, verifyReport, err
+}
+
+func resolveCodexAPIKey(ctx context.Context, profile string, cfg *config.Config) (string, error) {
+	if cfg == nil || strings.ToLower(strings.TrimSpace(cfg.Runtime.Provider)) != "codex" {
+		return "", nil
+	}
+	secretID := strings.TrimSpace(cfg.Runtime.Codex.SecretID)
+	if secretID == "" {
+		return "", errors.New("runtime.codex.secret_id is required when runtime.provider is codex")
+	}
+	return codexauth.LoadAPIKeyFunc(ctx, profile, cfg.Region.Name, secretID)
 }
 
 func resolveHostTarget(ctx context.Context, profile string, cfg *config.Config, target string) (string, error) {

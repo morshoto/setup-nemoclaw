@@ -54,9 +54,15 @@ type ImageConfig struct {
 }
 
 type RuntimeConfig struct {
-	Endpoint string `yaml:"endpoint"`
-	Model    string `yaml:"model"`
-	Port     int    `yaml:"port,omitempty"`
+	Endpoint string      `yaml:"endpoint"`
+	Model    string      `yaml:"model"`
+	Port     int         `yaml:"port,omitempty"`
+	Provider string      `yaml:"provider,omitempty"`
+	Codex    CodexConfig `yaml:"codex,omitempty"`
+}
+
+type CodexConfig struct {
+	SecretID string `yaml:"secret_id,omitempty"`
 }
 
 type SSHConfig struct {
@@ -178,6 +184,12 @@ func Validate(cfg *Config) error {
 	if cfg.Runtime.Port < 0 {
 		v.Add("runtime.port", "must be greater than or equal to 0")
 	}
+	if provider := strings.TrimSpace(cfg.Runtime.Provider); provider != "" && !IsValidRuntimeProvider(provider) {
+		v.Add("runtime.provider", fmt.Sprintf("unsupported provider %q", provider))
+	}
+	if strings.TrimSpace(cfg.Runtime.Provider) == "codex" && strings.TrimSpace(cfg.Runtime.Codex.SecretID) == "" {
+		v.Add("runtime.codex.secret_id", "is required when runtime.provider is codex")
+	}
 
 	if mode := EffectiveNetworkMode(cfg); mode != "" && mode != "public" && mode != "private" {
 		v.Add("instance.network_mode", "must be public or private")
@@ -258,6 +270,15 @@ func EffectiveNetworkMode(cfg *Config) string {
 func IsValidNetworkMode(mode string) bool {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "public", "private":
+		return true
+	default:
+		return false
+	}
+}
+
+func IsValidRuntimeProvider(provider string) bool {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "codex", "aws-bedrock", "gemini", "claude-code":
 		return true
 	default:
 		return false

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"openclaw/internal/codexauth"
 	"openclaw/internal/config"
 	"openclaw/internal/prompt"
 	"openclaw/internal/provider"
@@ -25,6 +26,7 @@ type Wizard struct {
 	ProviderFactory func(platform, computeClass string) provider.CloudProvider
 	Provider        provider.CloudProvider
 	Existing        *config.Config
+	AWSProfile      string
 }
 
 const initAWSLookupTimeout = 5 * time.Second
@@ -161,6 +163,23 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 		return nil, err
 	}
 
+	runtimeProvider, err := w.Prompter.Select("Select model provider", runtimeProviderOptions(), defaultRuntimeProvider(w.Existing))
+	if err != nil {
+		return nil, err
+	}
+
+	codexSecretID := ""
+	codexAPIKey := ""
+	if runtimeProvider == "codex" {
+		codexAPIKey, err = w.Prompter.Secret("OpenAI API key", "")
+		if err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(codexAPIKey) == "" {
+			return nil, errors.New("OpenAI API key is required for Codex")
+		}
+	}
+
 	nimEndpoint, err := w.Prompter.Text("NIM endpoint", defaultEndpoint(computeClass))
 	if err != nil {
 		return nil, err
@@ -177,7 +196,6 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 		Region:   config.RegionConfig{Name: region},
 		Instance: config.InstanceConfig{Type: instanceType, DiskSizeGB: diskSize, NetworkMode: networkMode},
 		Image:    config.ImageConfig{Name: image.Name, ID: image.ID},
-		Runtime:  config.RuntimeConfig{Endpoint: nimEndpoint, Model: model},
 		SSH: config.SSHConfig{
 			KeyName:        sshKeyName,
 			PrivateKeyPath: sshPrivateKeyPath,
@@ -192,6 +210,12 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 			Enabled:     true,
 			NetworkMode: networkMode,
 			UseNemoClaw: useNemoClaw,
+		},
+		Runtime: config.RuntimeConfig{
+			Endpoint: nimEndpoint,
+			Model:    model,
+			Provider: runtimeProvider,
+			Codex:    config.CodexConfig{SecretID: codexSecretID},
 		},
 	}
 
@@ -222,6 +246,10 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 	fmt.Fprintf(w.Out, "infra backend: %s\n", cfg.Infra.Backend)
 	fmt.Fprintf(w.Out, "terraform module: %s\n", cfg.Infra.ModuleDir)
 	fmt.Fprintf(w.Out, "use NemoClaw: %t\n", cfg.Sandbox.UseNemoClaw)
+	fmt.Fprintf(w.Out, "runtime provider: %s\n", cfg.Runtime.Provider)
+	if cfg.Runtime.Provider == "codex" {
+		fmt.Fprintf(w.Out, "codex auth: configured\n")
+	}
 	fmt.Fprintf(w.Out, "NIM endpoint: %s\n", cfg.Runtime.Endpoint)
 	fmt.Fprintf(w.Out, "model: %s\n", cfg.Runtime.Model)
 
@@ -233,7 +261,30 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 		return nil, errors.New("setup cancelled")
 	}
 
+	if runtimeProvider == "codex" {
+		codexSecretID, err := codexauth.StoreAPIKeyFunc(ctx, w.AWSProfile, region, codexauth.DefaultSecretName(), codexAPIKey)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Runtime.Codex.SecretID = codexSecretID
+	}
+
 	return cfg, nil
+}
+
+func runtimeProviderOptions() []string {
+	return []string{"codex", "aws-bedrock", "gemini", "claude-code"}
+}
+
+func defaultRuntimeProvider(existing *config.Config) string {
+	if existing == nil {
+		return "codex"
+	}
+	provider := strings.ToLower(strings.TrimSpace(existing.Runtime.Provider))
+	if provider == "" {
+		return "codex"
+	}
+	return provider
 }
 
 func (w *Wizard) listRegions(ctx context.Context) ([]string, error) {

@@ -53,6 +53,20 @@ func TestSessionConfirmAndTextAndInt(t *testing.T) {
 	}
 }
 
+func TestSessionSecretUsesTextFallbackWhenNotTerminal(t *testing.T) {
+	in := strings.NewReader("secret-value\n")
+	out := &bytes.Buffer{}
+	session := NewSession(in, out)
+
+	got, err := session.Secret("API key", "")
+	if err != nil {
+		t.Fatalf("Secret() error = %v", err)
+	}
+	if got != "secret-value" {
+		t.Fatalf("Secret() = %q, want secret-value", got)
+	}
+}
+
 func TestSessionReadMenuKeyParsesArrowsAndDigits(t *testing.T) {
 	session := NewSession(strings.NewReader("\x1b[A\x1b[B2"), &bytes.Buffer{})
 

@@ -39,6 +39,7 @@ func newRootCommand(app *App) *cobra.Command {
 	rootCmd.AddCommand(newVersionCommand(app))
 	rootCmd.AddCommand(newDoctorCommand())
 	rootCmd.AddCommand(newAuthCommand(app))
+	rootCmd.AddCommand(newOnboardCommand(app))
 	rootCmd.AddCommand(newConfigCommand(app))
 	rootCmd.AddCommand(newQuotaCommand(app))
 	rootCmd.AddCommand(newInitCommand(app))
@@ -152,6 +153,7 @@ func newInitCommand(app *App) *cobra.Command {
 				}
 				return newAWSProvider(app.opts.Profile, computeClass)
 			}, existing)
+			wizard.AWSProfile = app.opts.Profile
 			cfg, err := wizard.Run(cmd.Context())
 			if err != nil {
 				return err

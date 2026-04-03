@@ -74,7 +74,7 @@ func (v Verifier) Verify(ctx context.Context, req Request) (Report, error) {
 
 	report := Report{RuntimeConfigPath: runtimeConfigPath}
 	report.Checks = append(report.Checks,
-		runCommandCheck(ctx, v.Host, "docker readiness", "docker", []string{"info"}, "Install Docker and ensure the daemon is running."),
+		runDockerCheck(ctx, v.Host),
 		runRuntimeConfigCheck(ctx, v.Host, runtimeConfigPath, req.Config),
 	)
 	if req.Config == nil || config.EffectiveComputeClass(req.Config.Compute.Class) == config.ComputeClassGPU {
@@ -100,6 +100,16 @@ func (v Verifier) Verify(ctx context.Context, req Request) (Report, error) {
 func runCommandCheck(ctx context.Context, exec host.Executor, name, command string, args []string, remediation string) Check {
 	result, err := exec.Run(ctx, command, args...)
 	if err != nil {
+		if command == "docker" {
+			sudoResult, sudoErr := exec.Run(ctx, "sudo", append([]string{command}, args...)...)
+			if sudoErr == nil {
+				msg := strings.TrimSpace(sudoResult.Stdout)
+				if msg == "" {
+					msg = "passed"
+				}
+				return Check{Name: name, Passed: true, Message: msg}
+			}
+		}
 		msg := strings.TrimSpace(result.Stderr)
 		if msg == "" {
 			msg = err.Error()
@@ -244,6 +254,10 @@ exit 127
 		msg = fmt.Sprintf("reachable: %s", endpoint)
 	}
 	return Check{Name: "nim endpoint connectivity", Passed: true, Message: msg}
+}
+
+func runDockerCheck(ctx context.Context, exec host.Executor) Check {
+	return runCommandCheck(ctx, exec, "docker readiness", "docker", []string{"info"}, "Install Docker and ensure the daemon is running.")
 }
 
 func runOpenClawProcessCheck(ctx context.Context, exec host.Executor) Check {

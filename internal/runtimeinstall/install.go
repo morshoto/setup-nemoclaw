@@ -30,6 +30,7 @@ type Request struct {
 	WorkingDir    string
 	RequirePython bool
 	ComputeClass  string
+	CodexAPIKey   string
 }
 
 // Result reports the outcome of an installation workflow.
@@ -93,6 +94,9 @@ func (i Installer) Install(ctx context.Context, req Request) (Result, error) {
 	if req.Config == nil {
 		return Result{}, errors.New("install requires a config")
 	}
+	if err := ensureDockerAvailable(ctx, i.Host); err != nil {
+		return Result{}, err
+	}
 
 	backend := i.Backend
 	if backend == nil {
@@ -139,8 +143,11 @@ func (i Installer) Install(ctx context.Context, req Request) (Result, error) {
 		return Result{}, fmt.Errorf("write install script: %w", err)
 	}
 
-	if _, err := i.Host.Run(ctx, "mkdir", "-p", workingDir); err != nil {
+	if _, err := i.Host.Run(ctx, "sudo", "mkdir", "-p", workingDir); err != nil {
 		return Result{}, fmt.Errorf("prepare working directory %q: %w", workingDir, err)
+	}
+	if _, err := i.Host.Run(ctx, "sudo", "chown", "-R", "ubuntu:ubuntu", workingDir); err != nil {
+		return Result{}, fmt.Errorf("prepare working directory ownership %q: %w", workingDir, err)
 	}
 
 	remoteConfigPath := pathJoin(workingDir, "runtime.yaml")
@@ -203,12 +210,60 @@ func (i Installer) installService(ctx context.Context, req Request, workingDir s
 
 	remoteBinaryPath := pathJoin(workingDir, "bin", "openclaw")
 	remoteServicePath := "/etc/systemd/system/openclaw.service"
+	stagedBinaryPath := pathJoin(workingDir, "openclaw.upload")
+	stagedServicePath := pathJoin(workingDir, "openclaw.service")
+	remoteEnvPath := pathJoin(workingDir, "openclaw.env")
+	stagedEnvPath := pathJoin(workingDir, "openclaw.env.upload")
 
-	if err := i.Host.Upload(ctx, localBinaryPath, remoteBinaryPath); err != nil {
+	providerName := strings.ToLower(strings.TrimSpace(req.Config.Runtime.Provider))
+	codexAPIKey := strings.TrimSpace(req.CodexAPIKey)
+	envFilePath := ""
+	if providerName == "codex" && codexAPIKey != "" {
+		envFilePath = remoteEnvPath
+	}
+
+	if _, err := i.Host.Run(ctx, "sudo", "mkdir", "-p", pathJoin(workingDir, "bin")); err != nil {
+		return serviceInstallResult{}, fmt.Errorf("prepare runtime binary directory: %w", err)
+	}
+	if _, err := i.Host.Run(ctx, "sudo", "chown", "-R", "ubuntu:ubuntu", workingDir); err != nil {
+		return serviceInstallResult{}, fmt.Errorf("prepare runtime working directory ownership: %w", err)
+	}
+
+	if err := i.Host.Upload(ctx, localBinaryPath, stagedBinaryPath); err != nil {
 		return serviceInstallResult{}, fmt.Errorf("upload openclaw runtime binary: %w", err)
+	}
+	if _, err := i.Host.Run(ctx, "sudo", "mv", stagedBinaryPath, remoteBinaryPath); err != nil {
+		return serviceInstallResult{}, fmt.Errorf("install runtime binary: %w", err)
+	}
+	if _, err := i.Host.Run(ctx, "chmod", "+x", remoteBinaryPath); err != nil {
+		return serviceInstallResult{}, fmt.Errorf("prepare runtime binary: %w", err)
+	}
+	if envFilePath != "" {
+		tmpDir, err := os.MkdirTemp("", "openclaw-env-*")
+		if err != nil {
+			return serviceInstallResult{}, fmt.Errorf("create temporary auth workspace: %w", err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		localEnvPath := filepath.Join(tmpDir, "openclaw.env")
+		if err := os.WriteFile(localEnvPath, []byte(fmt.Sprintf("OPENAI_API_KEY=%s\n", codexAPIKey)), 0o600); err != nil {
+			return serviceInstallResult{}, fmt.Errorf("write codex environment file: %w", err)
+		}
+		if err := i.Host.Upload(ctx, localEnvPath, stagedEnvPath); err != nil {
+			return serviceInstallResult{}, fmt.Errorf("upload codex environment file: %w", err)
+		}
+		if _, err := i.Host.Run(ctx, "sudo", "mv", stagedEnvPath, envFilePath); err != nil {
+			return serviceInstallResult{}, fmt.Errorf("install codex environment file: %w", err)
+		}
+		if _, err := i.Host.Run(ctx, "sudo", "chmod", "600", envFilePath); err != nil {
+			return serviceInstallResult{}, fmt.Errorf("secure codex environment file: %w", err)
+		}
 	}
 
 	listenPort := req.Config.Runtime.Port
+	if req.Port > 0 {
+		listenPort = req.Port
+	}
 	if listenPort <= 0 {
 		listenPort = 8080
 	}
@@ -218,6 +273,7 @@ func (i Installer) installService(ctx context.Context, req Request, workingDir s
 		listenPort,
 		defaultRuntimeIdleTimeout,
 		defaultRuntimeIdleShutdownCommand,
+		envFilePath,
 	)
 
 	tmpDir, err := os.MkdirTemp("", "openclaw-systemd-*")
@@ -230,14 +286,17 @@ func (i Installer) installService(ctx context.Context, req Request, workingDir s
 	if err := os.WriteFile(localUnitPath, []byte(unitContents), 0o600); err != nil {
 		return serviceInstallResult{}, fmt.Errorf("write systemd unit: %w", err)
 	}
-	if err := i.Host.Upload(ctx, localUnitPath, remoteServicePath); err != nil {
+	if err := i.Host.Upload(ctx, localUnitPath, stagedServicePath); err != nil {
 		return serviceInstallResult{}, fmt.Errorf("upload systemd unit: %w", err)
 	}
+	if _, err := i.Host.Run(ctx, "sudo", "mv", stagedServicePath, remoteServicePath); err != nil {
+		return serviceInstallResult{}, fmt.Errorf("install systemd unit: %w", err)
+	}
 
-	if _, err := i.Host.Run(ctx, "systemctl", "daemon-reload"); err != nil {
+	if _, err := i.Host.Run(ctx, "sudo", "systemctl", "daemon-reload"); err != nil {
 		return serviceInstallResult{}, fmt.Errorf("reload systemd: %w", err)
 	}
-	if _, err := i.Host.Run(ctx, "systemctl", "enable", "--now", "openclaw.service"); err != nil {
+	if _, err := i.Host.Run(ctx, "sudo", "systemctl", "enable", "--now", "openclaw.service"); err != nil {
 		return serviceInstallResult{}, fmt.Errorf("enable openclaw service: %w", err)
 	}
 
@@ -271,7 +330,26 @@ func buildRuntimeBinary(ctx context.Context) (string, error) {
 	return outputPath, nil
 }
 
-func renderSystemdUnit(binaryPath, runtimeConfigPath string, listenPort int, idleTimeout time.Duration, idleShutdownCommand string) string {
+func ensureDockerAvailable(ctx context.Context, exec host.Executor) error {
+	if exec == nil {
+		return errors.New("docker check requires a host executor")
+	}
+	if _, err := exec.Run(ctx, "docker", "info"); err == nil {
+		return nil
+	}
+	if _, err := exec.Run(ctx, "sudo", "docker", "info"); err == nil {
+		return nil
+	}
+	if _, err := exec.Run(ctx, "sudo", "sh", "-lc", "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io && systemctl enable --now docker"); err != nil {
+		return fmt.Errorf("install docker on target host: %w", err)
+	}
+	if _, err := exec.Run(ctx, "sudo", "docker", "info"); err != nil {
+		return fmt.Errorf("verify docker on target host: %w", err)
+	}
+	return nil
+}
+
+func renderSystemdUnit(binaryPath, runtimeConfigPath string, listenPort int, idleTimeout time.Duration, idleShutdownCommand, envFilePath string) string {
 	if listenPort <= 0 {
 		listenPort = 8080
 	}
@@ -282,6 +360,10 @@ func renderSystemdUnit(binaryPath, runtimeConfigPath string, listenPort int, idl
 	if strings.TrimSpace(idleShutdownCommand) != "" {
 		idleArgs += fmt.Sprintf(" --idle-shutdown-command %q", strings.TrimSpace(idleShutdownCommand))
 	}
+	envLine := ""
+	if strings.TrimSpace(envFilePath) != "" {
+		envLine = fmt.Sprintf("EnvironmentFile=-%s\n", strings.TrimSpace(envFilePath))
+	}
 	return fmt.Sprintf(`[Unit]
 Description=OpenClaw runtime
 After=network-online.target
@@ -290,13 +372,13 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/openclaw
-ExecStart=%s serve --runtime-config %s --listen 0.0.0.0:%d%s
+%sExecStart=%s serve --runtime-config %s --listen 0.0.0.0:%d%s
 Restart=always
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-`, binaryPath, runtimeConfigPath, listenPort, idleArgs)
+`, envLine, binaryPath, runtimeConfigPath, listenPort, idleArgs)
 }
 
 func pathJoin(elem ...string) string {

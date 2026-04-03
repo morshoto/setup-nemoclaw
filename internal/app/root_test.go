@@ -325,11 +325,16 @@ func TestInstallCommandRunsWorkflowAgainstResolvedInstance(t *testing.T) {
 				"docker info":   {Stdout: "Docker Engine"},
 				"docker info --format {{json .Runtimes}}":                                                {Stdout: `{"nvidia":{}}`},
 				"docker run --rm --gpus all --pull=never nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi": {Stdout: "NVIDIA-SMI"},
-				"mkdir -p /opt/openclaw":                                 {},
-				"chmod +x /opt/openclaw/install.sh":                      {},
-				"sh /opt/openclaw/install.sh /opt/openclaw/runtime.yaml": {Stdout: "OpenClaw runtime installation complete"},
-				"systemctl daemon-reload":                                {},
-				"systemctl enable --now openclaw.service":                {},
+				"sudo mkdir -p /opt/openclaw":                                                            {},
+				"chmod +x /opt/openclaw/install.sh":                                                      {},
+				"sh /opt/openclaw/install.sh /opt/openclaw/runtime.yaml":                                 {Stdout: "OpenClaw runtime installation complete"},
+				"sudo mkdir -p /opt/openclaw/bin":                                                        {},
+				"sudo chown -R ubuntu:ubuntu /opt/openclaw":                                              {},
+				"sudo mv /opt/openclaw/openclaw.upload /opt/openclaw/bin/openclaw":                       {},
+				"chmod +x /opt/openclaw/bin/openclaw":                                                    {},
+				"sudo mv /opt/openclaw/openclaw.service /etc/systemd/system/openclaw.service":            {},
+				"sudo systemctl daemon-reload":                                                           {},
+				"sudo systemctl enable --now openclaw.service":                                           {},
 			},
 		}
 	}
@@ -544,15 +549,25 @@ func TestCreateCommandRunsEndToEndWorkflow(t *testing.T) {
 					return host.CommandResult{Stdout: `{"nvidia":{}}`}, nil
 				case key == "docker run --rm --gpus all --pull=never nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi":
 					return host.CommandResult{Stdout: "NVIDIA-SMI"}, nil
-				case key == "mkdir -p /opt/openclaw":
+				case key == "sudo mkdir -p /opt/openclaw":
 					return host.CommandResult{}, nil
 				case key == "chmod +x /opt/openclaw/install.sh":
 					return host.CommandResult{}, nil
 				case key == "sh /opt/openclaw/install.sh /opt/openclaw/runtime.yaml":
 					return host.CommandResult{Stdout: "OpenClaw runtime installation complete"}, nil
-				case key == "systemctl daemon-reload":
+				case key == "sudo mkdir -p /opt/openclaw/bin":
 					return host.CommandResult{}, nil
-				case key == "systemctl enable --now openclaw.service":
+				case key == "sudo chown -R ubuntu:ubuntu /opt/openclaw":
+					return host.CommandResult{}, nil
+				case key == "sudo mv /opt/openclaw/openclaw.upload /opt/openclaw/bin/openclaw":
+					return host.CommandResult{}, nil
+				case key == "chmod +x /opt/openclaw/bin/openclaw":
+					return host.CommandResult{}, nil
+				case key == "sudo mv /opt/openclaw/openclaw.service /etc/systemd/system/openclaw.service":
+					return host.CommandResult{}, nil
+				case key == "sudo systemctl daemon-reload":
+					return host.CommandResult{}, nil
+				case key == "sudo systemctl enable --now openclaw.service":
 					return host.CommandResult{}, nil
 				case command == "test" && strings.Join(args, " ") == "-s /opt/openclaw/runtime.yaml":
 					return host.CommandResult{}, nil

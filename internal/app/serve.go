@@ -98,6 +98,7 @@ func runRuntimeServer(ctx context.Context, addr, runtimeConfigPath string, runti
 			"runtime_config":   runtimeConfigPath,
 			"listen":           addr,
 			"use_nemoclaw":     runtimeCfg.UseNemoClaw,
+			"provider":         runtimeCfg.Provider,
 			"nim_endpoint":     runtimeCfg.NIMEndpoint,
 			"model":            runtimeCfg.Model,
 			"configured_port":  runtimeCfg.Port,

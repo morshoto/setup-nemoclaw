@@ -23,6 +23,9 @@ image:
 runtime:
   endpoint: http://localhost:11434
   model: llama3.2
+  provider: codex
+  codex:
+    secret_id: arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:openclaw/codex-api-key
 sandbox:
   enabled: true
 `)
@@ -87,7 +90,7 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 		Region:   RegionConfig{Name: "us-east-1"},
 		Instance: InstanceConfig{Type: "t3.medium", DiskSizeGB: 20},
 		Image:    ImageConfig{Name: "AWS Deep Learning AMI GPU Ubuntu 22.04", ID: "ami-0123456789abcdef0"},
-		Runtime:  RuntimeConfig{Endpoint: "http://localhost:11434", Model: "llama3.2"},
+		Runtime:  RuntimeConfig{Endpoint: "http://localhost:11434", Model: "llama3.2", Provider: "codex", Codex: CodexConfig{SecretID: "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:openclaw/codex-api-key"}},
 		Sandbox:  SandboxConfig{Enabled: true, NetworkMode: "private", UseNemoClaw: true, FilesystemAllow: []string{"/tmp", "/var/tmp"}},
 	}
 
@@ -99,7 +102,7 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if loaded.Platform.Name != cfg.Platform.Name || loaded.Compute.Class != cfg.Compute.Class || loaded.Image.ID != cfg.Image.ID || loaded.Sandbox.NetworkMode != "private" || !loaded.Sandbox.UseNemoClaw {
+	if loaded.Platform.Name != cfg.Platform.Name || loaded.Compute.Class != cfg.Compute.Class || loaded.Image.ID != cfg.Image.ID || loaded.Runtime.Provider != "codex" || loaded.Runtime.Codex.SecretID != cfg.Runtime.Codex.SecretID || loaded.Sandbox.NetworkMode != "private" || !loaded.Sandbox.UseNemoClaw {
 		t.Fatalf("round trip mismatch: %#v", loaded)
 	}
 	if len(loaded.Sandbox.FilesystemAllow) != 2 || loaded.Sandbox.FilesystemAllow[0] != "/tmp" {
