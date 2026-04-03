@@ -20,6 +20,7 @@ curl -fsSL "${source_archive_url}" | tar -xz -C /opt/openclaw/src --strip-compon
 
 docker build -t "${container_name}:latest" /opt/openclaw/src
 docker rm -f "${container_name}" >/dev/null 2>&1 || true
+# The runtime currently assumes host networking; if that changes, this needs to be revisited with Terraform and the runtime config together.
 docker run -d \
   --name "${container_name}" \
   --restart unless-stopped \
