@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -18,6 +19,8 @@ const (
 	ComputeClassGPU = "gpu"
 	ComputeClassCPU = "cpu"
 )
+
+var awsRegionPattern = regexp.MustCompile(`^[a-z]{2}(-[a-z0-9]+)+-\d+$`)
 
 type Config struct {
 	Platform PlatformConfig `yaml:"platform"`
@@ -162,6 +165,8 @@ func Validate(cfg *Config) error {
 
 	if cfg.Region.Name == "" {
 		v.Add("region.name", "is required")
+	} else if !awsRegionPattern.MatchString(strings.TrimSpace(cfg.Region.Name)) {
+		v.Add("region.name", "must look like an AWS region name such as ap-northeast-1")
 	}
 
 	if cfg.Instance.Type == "" {

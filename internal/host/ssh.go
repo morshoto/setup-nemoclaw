@@ -5,8 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -23,7 +25,8 @@ type SSHConfig struct {
 
 // SSHExecutor runs commands through the local ssh/scp clients.
 type SSHExecutor struct {
-	cfg SSHConfig
+	cfg            SSHConfig
+	knownHostsFile string
 }
 
 // NewSSHExecutor creates a host executor backed by ssh and scp.
@@ -34,7 +37,10 @@ func NewSSHExecutor(cfg SSHConfig) *SSHExecutor {
 	if cfg.ConnectTimeout <= 0 {
 		cfg.ConnectTimeout = 15 * time.Second
 	}
-	return &SSHExecutor{cfg: cfg}
+	return &SSHExecutor{
+		cfg:            cfg,
+		knownHostsFile: defaultKnownHostsFile(cfg),
+	}
 }
 
 func (e *SSHExecutor) Run(ctx context.Context, command string, args ...string) (CommandResult, error) {
@@ -86,6 +92,10 @@ func (e *SSHExecutor) Upload(ctx context.Context, localPath, remotePath string) 
 	if strings.TrimSpace(e.cfg.IdentityFile) != "" {
 		args = append([]string{"-i", e.cfg.IdentityFile}, args...)
 	}
+	args = append([]string{
+		"-o", "UserKnownHostsFile=" + e.knownHostsFile,
+		"-o", "StrictHostKeyChecking=accept-new",
+	}, args...)
 	cmd := exec.CommandContext(ctx, "scp", args...)
 
 	var stderr bytes.Buffer
@@ -112,6 +122,8 @@ func (e *SSHExecutor) sshArgs(remoteCommand string) []string {
 		"-p", strconv.Itoa(e.cfg.Port),
 		"-o", "BatchMode=yes",
 		"-o", "ConnectTimeout=" + strconv.Itoa(int(e.cfg.ConnectTimeout.Seconds())),
+		"-o", "UserKnownHostsFile=" + e.knownHostsFile,
+		"-o", "StrictHostKeyChecking=accept-new",
 	}
 	if strings.TrimSpace(e.cfg.IdentityFile) != "" {
 		args = append(args, "-i", e.cfg.IdentityFile)
@@ -155,6 +167,15 @@ func exitCodeFromError(err error) int {
 		return exitErr.ExitCode()
 	}
 	return 0
+}
+
+func defaultKnownHostsFile(cfg SSHConfig) string {
+	host := strings.TrimSpace(cfg.Host)
+	if host == "" {
+		host = "unknown-host"
+	}
+	host = strings.NewReplacer("/", "_", ":", "_", "@", "_", " ", "_").Replace(host)
+	return filepath.Join(os.TempDir(), fmt.Sprintf("openclaw-known-hosts-%s-%d", host, cfg.Port))
 }
 
 // RemoteCommandError reports a remote command failure with the captured stderr.

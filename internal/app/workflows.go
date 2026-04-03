@@ -321,7 +321,7 @@ func runCreateWorkflow(ctx context.Context, profile string, cfg *config.Config, 
 		ConfigPath: "/opt/openclaw/runtime.yaml",
 	}
 	if err := progress.Run(ctx, "waiting for bootstrap", func() error {
-		return waitForBootstrapReady(ctx, cfg, target, opts.SSHUser, opts.SSHKey, opts.SSHPort)
+		return waitForBootstrapReady(ctx, cfg, target, opts.SSHUser, opts.SSHKey, opts.SSHPort, os.Stdout)
 	}); err != nil {
 		return instance, installResult, verify.Report{}, err
 	}
@@ -343,7 +343,7 @@ func runCreateWorkflow(ctx context.Context, profile string, cfg *config.Config, 
 	return instance, installResult, verifyReport, nil
 }
 
-func waitForBootstrapReady(ctx context.Context, cfg *config.Config, target, sshUser, sshKey string, sshPort int) error {
+func waitForBootstrapReady(ctx context.Context, cfg *config.Config, target, sshUser, sshKey string, sshPort int, out io.Writer) error {
 	if strings.TrimSpace(target) == "" {
 		return errors.New("target is required")
 	}
@@ -369,16 +369,25 @@ func waitForBootstrapReady(ctx context.Context, cfg *config.Config, target, sshU
 		defer cancel()
 	}
 	delay := 2 * time.Second
+	attempt := 0
 	for {
+		attempt++
 		result, err := exec.Run(waitCtx, "test", "-f", "/opt/openclaw/bootstrap.done")
 		if err == nil {
 			break
 		}
 		msg := strings.ToLower(strings.TrimSpace(result.Stderr + " " + err.Error()))
+		if attempt == 1 || attempt%3 == 0 {
+			if status, statusErr := probeBootstrapStatus(waitCtx, exec); statusErr == nil {
+				fmt.Fprintf(out, "bootstrap still running on %s\n%s\n", target, status)
+			} else {
+				fmt.Fprintf(out, "bootstrap still running on %s (status unavailable: %v)\n", target, statusErr)
+			}
+		}
 		if waitCtx.Err() != nil {
 			return fmt.Errorf("wait for docker bootstrap on %s: %w", target, waitCtx.Err())
 		}
-		if strings.Contains(msg, "permission denied") || strings.Contains(msg, "no such file") || strings.Contains(msg, "exit status 1") {
+		if result.ExitCode == 1 || strings.Contains(msg, "permission denied") || strings.Contains(msg, "no such file") || strings.Contains(msg, "exit status 1") || strings.Contains(msg, "exit code 1") {
 			timer := time.NewTimer(delay)
 			select {
 			case <-waitCtx.Done():
@@ -394,6 +403,26 @@ func waitForBootstrapReady(ctx context.Context, cfg *config.Config, target, sshU
 		return fmt.Errorf("wait for docker bootstrap on %s: %w", target, err)
 	}
 	return nil
+}
+
+func probeBootstrapStatus(ctx context.Context, exec host.Executor) (string, error) {
+	status, statusErr := exec.Run(ctx, "sh", "-lc", `set +e
+printf 'cloud-init status:\n'
+cloud-init status --long 2>&1 || cloud-init status 2>&1 || true
+printf '\nbootstrap log tail:\n'
+tail -n 20 /var/log/openclaw-bootstrap.log 2>&1 || true
+`)
+	if statusErr != nil {
+		return "", statusErr
+	}
+	text := strings.TrimSpace(status.Stdout)
+	if text == "" {
+		text = strings.TrimSpace(status.Stderr)
+	}
+	if text == "" {
+		text = "no bootstrap status available yet"
+	}
+	return text, nil
 }
 
 func resolveCodexAPIKey(ctx context.Context, profile string, cfg *config.Config) (string, error) {

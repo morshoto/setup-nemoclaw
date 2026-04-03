@@ -61,6 +61,25 @@ func TestValidateReportsReadableErrors(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsMalformedAWSRegion(t *testing.T) {
+	cfg := &Config{
+		Platform: PlatformConfig{Name: PlatformAWS},
+		Region:   RegionConfig{Name: "ap-northeast1"},
+		Instance: InstanceConfig{Type: "t3.medium", DiskSizeGB: 20},
+		Image:    ImageConfig{Name: "Ubuntu 22.04 LTS"},
+		Runtime:  RuntimeConfig{Endpoint: "http://localhost:11434", Model: "llama3.2"},
+		Sandbox:  SandboxConfig{Enabled: true},
+	}
+
+	err := Validate(cfg)
+	if err == nil {
+		t.Fatal("Validate() error = nil")
+	}
+	if got := err.Error(); !strings.Contains(got, "region.name") {
+		t.Fatalf("Validate() error = %q, want region.name", got)
+	}
+}
+
 func TestLoadRejectsInvalidYaml(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "openclaw.yaml")
