@@ -15,8 +15,15 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"openclaw/internal/bedrock"
 	"openclaw/internal/runtimeinstall"
 )
+
+type runtimeGenerator interface {
+	Generate(ctx context.Context, prompt string) (string, error)
+}
+
+var newBedrockGenerator = bedrock.New
 
 func newServeCommand(app *App) *cobra.Command {
 	var runtimeConfigPath string
@@ -40,11 +47,15 @@ func newServeCommand(app *App) *cobra.Command {
 			if addr == "" {
 				addr = listenAddressForRuntime(runtimeCfg)
 			}
+			generator, err := runtimeGeneratorForConfig(cmd.Context(), runtimeCfg)
+			if err != nil {
+				return err
+			}
 
 			logger := loggerFromContext(cmd.Context())
-			logger.Info("starting runtime server", "listen", addr, "runtimeConfig", runtimeConfigPath)
+			logger.Info("starting runtime server", "listen", addr, "runtimeConfig", runtimeConfigPath, "provider", runtimeCfg.Provider)
 			fmt.Fprintf(cmd.OutOrStdout(), "runtime server listening on %s\n", addr)
-			return runRuntimeServer(cmd.Context(), addr, runtimeConfigPath, runtimeCfg, idleTimeout, idleShutdownCommand)
+			return runRuntimeServer(cmd.Context(), addr, runtimeConfigPath, runtimeCfg, generator, idleTimeout, idleShutdownCommand)
 		},
 	}
 
@@ -75,7 +86,19 @@ func listenAddressForRuntime(cfg *runtimeinstall.RuntimeConfig) string {
 	return fmt.Sprintf("0.0.0.0:%d", port)
 }
 
-func runRuntimeServer(ctx context.Context, addr, runtimeConfigPath string, runtimeCfg *runtimeinstall.RuntimeConfig, idleTimeout time.Duration, idleShutdownCommand string) error {
+func runtimeGeneratorForConfig(ctx context.Context, runtimeCfg *runtimeinstall.RuntimeConfig) (runtimeGenerator, error) {
+	if runtimeCfg == nil {
+		return nil, nil
+	}
+	switch strings.ToLower(strings.TrimSpace(runtimeCfg.Provider)) {
+	case "aws-bedrock":
+		return newBedrockGenerator(ctx, runtimeCfg.Region, runtimeCfg.Model)
+	default:
+		return nil, nil
+	}
+}
+
+func runRuntimeServer(ctx context.Context, addr, runtimeConfigPath string, runtimeCfg *runtimeinstall.RuntimeConfig, generator runtimeGenerator, idleTimeout time.Duration, idleShutdownCommand string) error {
 	mux := http.NewServeMux()
 	var mu sync.Mutex
 	lastActivity := time.Now()
@@ -99,12 +122,47 @@ func runRuntimeServer(ctx context.Context, addr, runtimeConfigPath string, runti
 			"listen":           addr,
 			"use_nemoclaw":     runtimeCfg.UseNemoClaw,
 			"provider":         runtimeCfg.Provider,
+			"region":           runtimeCfg.Region,
 			"nim_endpoint":     runtimeCfg.NIMEndpoint,
 			"model":            runtimeCfg.Model,
 			"configured_port":  runtimeCfg.Port,
 			"sandbox_enabled":  runtimeCfg.Sandbox.Enabled,
 			"sandbox_network":  runtimeCfg.Sandbox.NetworkMode,
 			"filesystem_allow": runtimeCfg.Sandbox.FilesystemAllow,
+		})
+	})
+	mux.HandleFunc("/v1/generate", func(w http.ResponseWriter, r *http.Request) {
+		touch()
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if strings.ToLower(strings.TrimSpace(runtimeCfg.Provider)) != "aws-bedrock" {
+			http.Error(w, "generate is only available for aws-bedrock provider", http.StatusNotImplemented)
+			return
+		}
+		if generator == nil {
+			http.Error(w, "bedrock generator is not configured", http.StatusServiceUnavailable)
+			return
+		}
+		var req struct {
+			Prompt string `json:"prompt"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, fmt.Sprintf("parse request: %v", err), http.StatusBadRequest)
+			return
+		}
+		output, err := generator.Generate(r.Context(), req.Prompt)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":   "ok",
+			"provider": runtimeCfg.Provider,
+			"model":    runtimeCfg.Model,
+			"output":   output,
 		})
 	})
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {

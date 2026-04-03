@@ -81,16 +81,18 @@ func (v Verifier) Verify(ctx context.Context, req Request) (Report, error) {
 		report.Checks = append(report.Checks, runCommandCheck(ctx, v.Host, "gpu visibility", "nvidia-smi", []string{"-L"}, "Install NVIDIA drivers and verify `nvidia-smi` works."))
 	}
 
-	endpoint, err := resolveEndpoint(ctx, v.Host, runtimeConfigPath, req.Config)
-	if err != nil {
-		report.Checks = append(report.Checks, Check{
-			Name:        "nim-endpoint",
-			Passed:      false,
-			Message:     err.Error(),
-			Remediation: "Ensure the runtime config is present and points at a reachable NIM endpoint.",
-		})
-	} else {
-		report.Checks = append(report.Checks, runEndpointCheck(ctx, v.Host, endpoint))
+	if !isBedrockProvider(req.Config) {
+		endpoint, err := resolveEndpoint(ctx, v.Host, runtimeConfigPath, req.Config)
+		if err != nil {
+			report.Checks = append(report.Checks, Check{
+				Name:        "nim-endpoint",
+				Passed:      false,
+				Message:     err.Error(),
+				Remediation: "Ensure the runtime config is present and points at a reachable NIM endpoint.",
+			})
+		} else {
+			report.Checks = append(report.Checks, runEndpointCheck(ctx, v.Host, endpoint))
+		}
 	}
 
 	port, err := resolveRuntimePort(ctx, v.Host, runtimeConfigPath, req.Config)
@@ -104,8 +106,15 @@ func (v Verifier) Verify(ctx context.Context, req Request) (Report, error) {
 	} else {
 		report.Checks = append(report.Checks, runOpenClawHealthCheck(ctx, v.Host, port))
 	}
+	if isBedrockProvider(req.Config) {
+		report.Checks = append(report.Checks, runBedrockGenerateCheck(ctx, v.Host, port))
+	}
 	report.Checks = append(report.Checks, runOpenClawContainerCheck(ctx, v.Host))
 	return report, nil
+}
+
+func isBedrockProvider(cfg *config.Config) bool {
+	return cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.Runtime.Provider), "aws-bedrock")
 }
 
 func runCommandCheck(ctx context.Context, exec host.Executor, name, command string, args []string, remediation string) Check {
@@ -382,6 +391,40 @@ exit 127
 		msg = fmt.Sprintf("reachable: %s", endpoint)
 	}
 	return Check{Name: "openclaw health", Passed: true, Message: msg}
+}
+
+func runBedrockGenerateCheck(ctx context.Context, exec host.Executor, port int) Check {
+	if port <= 0 {
+		port = 8080
+	}
+	endpoint := fmt.Sprintf("http://127.0.0.1:%d/v1/generate", port)
+	script := fmt.Sprintf(`
+endpoint=%s
+payload='{"prompt":"say hello in one short sentence"}'
+if command -v curl >/dev/null 2>&1; then
+  curl --max-time 20 -fsS -X POST -H 'Content-Type: application/json' -d "$payload" "$endpoint" >/dev/null
+  exit $?
+fi
+exit 127
+`, strconv.Quote(endpoint))
+	result, err := exec.Run(ctx, "sh", "-lc", script)
+	if err != nil {
+		msg := strings.TrimSpace(result.Stderr)
+		if msg == "" {
+			msg = err.Error()
+		}
+		return Check{
+			Name:        "bedrock generation",
+			Passed:      false,
+			Message:     msg,
+			Remediation: "Ensure the runtime has a Bedrock instance role and can invoke the selected model.",
+		}
+	}
+	msg := strings.TrimSpace(result.Stdout)
+	if msg == "" {
+		msg = fmt.Sprintf("reachable: %s", endpoint)
+	}
+	return Check{Name: "bedrock generation", Passed: true, Message: msg}
 }
 
 func runOpenClawContainerCheck(ctx context.Context, exec host.Executor) Check {

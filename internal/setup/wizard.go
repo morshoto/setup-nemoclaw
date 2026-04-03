@@ -190,12 +190,15 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 		runtimePublicCIDR = ""
 	}
 
-	nimEndpoint, err := w.Prompter.Text("NIM endpoint", defaultEndpoint(computeClass))
-	if err != nil {
-		return nil, err
+	nimEndpoint := ""
+	if runtimeProvider != "aws-bedrock" {
+		nimEndpoint, err = w.Prompter.Text("NIM endpoint", defaultEndpoint(computeClass))
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	model, err := w.Prompter.Text("Model name", "llama3.2")
+	model, err := w.Prompter.Text("Model name", defaultRuntimeModel(runtimeProvider))
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +267,12 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 	if cfg.Runtime.Provider == "codex" {
 		fmt.Fprintf(w.Out, "codex auth: configured\n")
 	}
-	fmt.Fprintf(w.Out, "NIM endpoint: %s\n", cfg.Runtime.Endpoint)
+	if cfg.Runtime.Provider == "aws-bedrock" {
+		fmt.Fprintf(w.Out, "bedrock auth: uses instance role\n")
+	}
+	if strings.TrimSpace(cfg.Runtime.Endpoint) != "" {
+		fmt.Fprintf(w.Out, "NIM endpoint: %s\n", cfg.Runtime.Endpoint)
+	}
 	fmt.Fprintf(w.Out, "model: %s\n", cfg.Runtime.Model)
 
 	confirm, err := w.Prompter.Confirm("Write this configuration", true)
@@ -299,6 +307,15 @@ func defaultRuntimeProvider(existing *config.Config) string {
 		return "codex"
 	}
 	return provider
+}
+
+func defaultRuntimeModel(provider string) string {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "aws-bedrock":
+		return "anthropic.claude-3-haiku-20240307-v1:0"
+	default:
+		return "llama3.2"
+	}
 }
 
 func (w *Wizard) listRegions(ctx context.Context) ([]string, error) {

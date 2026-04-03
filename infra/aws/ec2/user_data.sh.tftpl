@@ -41,4 +41,22 @@ if [ ! -s /tmp/openclaw-healthz.json ]; then
   exit 1
 fi
 
+if [ "${runtime_provider}" = "aws-bedrock" ]; then
+  for attempt in $(seq 1 30); do
+    if curl -fsS -X POST "http://127.0.0.1:${listen_port}/v1/generate" \
+      -H "Content-Type: application/json" \
+      -d '{"prompt":"say hello in one short sentence"}' >/tmp/openclaw-generate.json; then
+      echo "openclaw bedrock generate check passed"
+      cat /tmp/openclaw-generate.json
+      break
+    fi
+    sleep 2
+  done
+
+  if [ ! -s /tmp/openclaw-generate.json ]; then
+    echo "openclaw bedrock generate check failed"
+    exit 1
+  fi
+fi
+
 touch /opt/openclaw/bootstrap.done

@@ -45,18 +45,21 @@ data "aws_subnets" "any" {
 }
 
 locals {
-  vpc_id       = length(data.aws_vpcs.default.ids) > 0 ? data.aws_vpcs.default.ids[0] : ""
-  subnet_ids   = length(data.aws_subnets.default_for_az.ids) > 0 ? data.aws_subnets.default_for_az.ids : data.aws_subnets.any.ids
-  subnet_id    = length(local.subnet_ids) > 0 ? local.subnet_ids[0] : ""
-  image_name   = trimspace(var.image_name)
-  image_id     = trimspace(var.image_id)
-  listen_port  = var.runtime_port > 0 ? var.runtime_port : 8080
-  runtime_cidr = trimspace(var.runtime_cidr) != "" ? trimspace(var.runtime_cidr) : trimspace(var.ssh_cidr)
+  vpc_id           = length(data.aws_vpcs.default.ids) > 0 ? data.aws_vpcs.default.ids[0] : ""
+  subnet_ids       = length(data.aws_subnets.default_for_az.ids) > 0 ? data.aws_subnets.default_for_az.ids : data.aws_subnets.any.ids
+  subnet_id        = length(local.subnet_ids) > 0 ? local.subnet_ids[0] : ""
+  image_name       = trimspace(var.image_name)
+  image_id         = trimspace(var.image_id)
+  listen_port      = var.runtime_port > 0 ? var.runtime_port : 8080
+  runtime_cidr     = trimspace(var.runtime_cidr) != "" ? trimspace(var.runtime_cidr) : trimspace(var.ssh_cidr)
+  runtime_provider = trimspace(var.runtime_provider)
   runtime_config_yaml = yamlencode({
     use_nemoclaw = var.use_nemoclaw
     nim_endpoint = var.nim_endpoint
     model        = var.model
     port         = local.listen_port
+    provider     = local.runtime_provider
+    region       = var.region
     sandbox = {
       enabled          = true
       network_mode     = var.network_mode
@@ -66,6 +69,7 @@ locals {
   user_data = templatefile("${path.module}/user_data.sh.tftpl", {
     container_name      = trimspace(var.container_name)
     listen_port         = local.listen_port
+    runtime_provider    = local.runtime_provider
     runtime_config_yaml = local.runtime_config_yaml
     source_archive_url  = trimspace(var.source_archive_url)
     source_ref          = trimspace(var.source_ref)
@@ -87,6 +91,47 @@ data "aws_ssm_parameter" "ubuntu_2204" {
 data "aws_ssm_parameter" "dlami_gpu_2204" {
   count = local.image_id == "" && local.image_name == "AWS Deep Learning AMI GPU Ubuntu 22.04" ? 1 : 0
   name  = "/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id"
+}
+
+data "aws_iam_policy_document" "bedrock_assume_role" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "bedrock" {
+  count              = local.runtime_provider == "aws-bedrock" ? 1 : 0
+  name               = "${var.name_prefix}-${random_id.suffix.hex}-bedrock"
+  assume_role_policy = data.aws_iam_policy_document.bedrock_assume_role.json
+}
+
+resource "aws_iam_role_policy" "bedrock" {
+  count = local.runtime_provider == "aws-bedrock" ? 1 : 0
+  name  = "${var.name_prefix}-${random_id.suffix.hex}-bedrock"
+  role  = aws_iam_role.bedrock[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "bedrock:Converse",
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream",
+      ]
+      Resource = "*"
+    }]
+  })
+}
+
+resource "aws_iam_instance_profile" "bedrock" {
+  count = local.runtime_provider == "aws-bedrock" ? 1 : 0
+  name  = "${var.name_prefix}-${random_id.suffix.hex}-bedrock"
+  role  = aws_iam_role.bedrock[0].name
 }
 
 locals {
@@ -148,6 +193,7 @@ resource "aws_instance" "this" {
   subnet_id                   = local.subnet_id
   associate_public_ip_address = var.network_mode == "public"
   vpc_security_group_ids      = [aws_security_group.this.id]
+  iam_instance_profile        = local.runtime_provider == "aws-bedrock" ? aws_iam_instance_profile.bedrock[0].name : null
   user_data                   = local.user_data
 
   root_block_device {

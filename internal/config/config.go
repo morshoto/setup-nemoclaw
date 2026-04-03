@@ -175,7 +175,11 @@ func Validate(cfg *Config) error {
 		v.Add("image.name", "is required")
 	}
 
-	if cfg.Runtime.Endpoint == "" {
+	if strings.ToLower(strings.TrimSpace(cfg.Runtime.Provider)) == "aws-bedrock" {
+		if strings.TrimSpace(cfg.Runtime.Model) == "" {
+			v.Add("runtime.model", "is required for aws-bedrock provider")
+		}
+	} else if cfg.Runtime.Endpoint == "" {
 		v.Add("runtime.endpoint", "is required")
 	} else if parsed, err := url.Parse(cfg.Runtime.Endpoint); err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		v.Add("runtime.endpoint", "must be a valid URL with scheme and host")

@@ -78,6 +78,7 @@ ssh:
 	mustContainTerraformAssignment(t, body, "image_id", `""`)
 	mustContainTerraformAssignment(t, body, "runtime_port", `8080`)
 	mustContainTerraformAssignment(t, body, "runtime_cidr", `"0.0.0.0/0"`)
+	mustContainTerraformAssignment(t, body, "runtime_provider", `""`)
 	mustContainTerraformAssignment(t, body, "ssh_key_name", `"demo-key"`)
 	mustContainTerraformAssignment(t, body, "ssh_public_key", `"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITfvarsTestKey openclaw"`)
 	mustContainTerraformAssignment(t, body, "ssh_cidr", `"203.0.113.0/24"`)

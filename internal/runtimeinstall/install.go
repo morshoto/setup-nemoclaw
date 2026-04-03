@@ -220,6 +220,8 @@ func (i Installer) installService(ctx context.Context, req Request, workingDir s
 	envFilePath := ""
 	if providerName == "codex" && codexAPIKey != "" {
 		envFilePath = remoteEnvPath
+	} else if providerName == "aws-bedrock" {
+		envFilePath = remoteEnvPath
 	}
 
 	if _, err := i.Host.Run(ctx, "sudo", "mkdir", "-p", pathJoin(workingDir, "bin")); err != nil {
@@ -246,17 +248,24 @@ func (i Installer) installService(ctx context.Context, req Request, workingDir s
 		defer os.RemoveAll(tmpDir)
 
 		localEnvPath := filepath.Join(tmpDir, "openclaw.env")
-		if err := os.WriteFile(localEnvPath, []byte(fmt.Sprintf("OPENAI_API_KEY=%s\n", codexAPIKey)), 0o600); err != nil {
-			return serviceInstallResult{}, fmt.Errorf("write codex environment file: %w", err)
+		envContents := ""
+		switch providerName {
+		case "codex":
+			envContents = fmt.Sprintf("OPENAI_API_KEY=%s\n", codexAPIKey)
+		case "aws-bedrock":
+			envContents = fmt.Sprintf("AWS_REGION=%s\nAWS_DEFAULT_REGION=%s\n", strings.TrimSpace(req.Config.Region.Name), strings.TrimSpace(req.Config.Region.Name))
+		}
+		if err := os.WriteFile(localEnvPath, []byte(envContents), 0o600); err != nil {
+			return serviceInstallResult{}, fmt.Errorf("write provider environment file: %w", err)
 		}
 		if err := i.Host.Upload(ctx, localEnvPath, stagedEnvPath); err != nil {
-			return serviceInstallResult{}, fmt.Errorf("upload codex environment file: %w", err)
+			return serviceInstallResult{}, fmt.Errorf("upload provider environment file: %w", err)
 		}
 		if _, err := i.Host.Run(ctx, "sudo", "mv", stagedEnvPath, envFilePath); err != nil {
-			return serviceInstallResult{}, fmt.Errorf("install codex environment file: %w", err)
+			return serviceInstallResult{}, fmt.Errorf("install provider environment file: %w", err)
 		}
 		if _, err := i.Host.Run(ctx, "sudo", "chmod", "600", envFilePath); err != nil {
-			return serviceInstallResult{}, fmt.Errorf("secure codex environment file: %w", err)
+			return serviceInstallResult{}, fmt.Errorf("secure provider environment file: %w", err)
 		}
 	}
 

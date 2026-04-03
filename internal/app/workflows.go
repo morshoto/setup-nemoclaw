@@ -59,26 +59,27 @@ type createOptions struct {
 }
 
 type terraformVars struct {
-	AWSProfile   string `json:"aws_profile"`
-	Region       string `json:"region"`
-	ComputeClass string `json:"compute_class"`
-	InstanceType string `json:"instance_type"`
-	DiskSizeGB   int    `json:"disk_size_gb"`
-	NetworkMode  string `json:"network_mode"`
-	ImageName    string `json:"image_name"`
-	ImageID      string `json:"image_id"`
-	RuntimePort  int    `json:"runtime_port"`
-	RuntimeCIDR  string `json:"runtime_cidr"`
-	SSHKeyName   string `json:"ssh_key_name"`
-	SSHPublicKey string `json:"ssh_public_key"`
-	SSHCIDR      string `json:"ssh_cidr"`
-	SSHUser      string `json:"ssh_user"`
-	NamePrefix   string `json:"name_prefix"`
-	UseNemoClaw  bool   `json:"use_nemoclaw"`
-	NIMEndpoint  string `json:"nim_endpoint"`
-	Model        string `json:"model"`
-	SourceURL    string `json:"source_archive_url"`
-	SourceRef    string `json:"source_ref"`
+	AWSProfile      string `json:"aws_profile"`
+	Region          string `json:"region"`
+	ComputeClass    string `json:"compute_class"`
+	InstanceType    string `json:"instance_type"`
+	DiskSizeGB      int    `json:"disk_size_gb"`
+	NetworkMode     string `json:"network_mode"`
+	ImageName       string `json:"image_name"`
+	ImageID         string `json:"image_id"`
+	RuntimePort     int    `json:"runtime_port"`
+	RuntimeCIDR     string `json:"runtime_cidr"`
+	RuntimeProvider string `json:"runtime_provider"`
+	SSHKeyName      string `json:"ssh_key_name"`
+	SSHPublicKey    string `json:"ssh_public_key"`
+	SSHCIDR         string `json:"ssh_cidr"`
+	SSHUser         string `json:"ssh_user"`
+	NamePrefix      string `json:"name_prefix"`
+	UseNemoClaw     bool   `json:"use_nemoclaw"`
+	NIMEndpoint     string `json:"nim_endpoint"`
+	Model           string `json:"model"`
+	SourceURL       string `json:"source_archive_url"`
+	SourceRef       string `json:"source_ref"`
 }
 
 type verifyOptions struct {
@@ -153,24 +154,25 @@ func runInfraCreate(ctx context.Context, profile string, cfg *config.Config, opt
 	defer os.RemoveAll(workdir)
 
 	varsPath, err := writeTerraformVars(workdir, terraformVars{
-		Region:       cfg.Region.Name,
-		ComputeClass: config.EffectiveComputeClass(cfg.Compute.Class),
-		InstanceType: instanceType,
-		DiskSizeGB:   cfg.Instance.DiskSizeGB,
-		NetworkMode:  networkMode,
-		ImageID:      image.ID,
-		RuntimePort:  runtimePort,
-		RuntimeCIDR:  runtimeCIDR,
-		SSHKeyName:   sshKeyName,
-		SSHPublicKey: sshPublicKey,
-		SSHCIDR:      sshCIDR,
-		SSHUser:      sshUser,
-		NamePrefix:   "openclaw",
-		UseNemoClaw:  cfg.Sandbox.UseNemoClaw,
-		NIMEndpoint:  cfg.Runtime.Endpoint,
-		Model:        cfg.Runtime.Model,
-		SourceURL:    sourceURL,
-		SourceRef:    sourceRef,
+		Region:          cfg.Region.Name,
+		ComputeClass:    config.EffectiveComputeClass(cfg.Compute.Class),
+		InstanceType:    instanceType,
+		DiskSizeGB:      cfg.Instance.DiskSizeGB,
+		NetworkMode:     networkMode,
+		ImageID:         image.ID,
+		RuntimePort:     runtimePort,
+		RuntimeCIDR:     runtimeCIDR,
+		RuntimeProvider: strings.TrimSpace(cfg.Runtime.Provider),
+		SSHKeyName:      sshKeyName,
+		SSHPublicKey:    sshPublicKey,
+		SSHCIDR:         sshCIDR,
+		SSHUser:         sshUser,
+		NamePrefix:      "openclaw",
+		UseNemoClaw:     cfg.Sandbox.UseNemoClaw,
+		NIMEndpoint:     cfg.Runtime.Endpoint,
+		Model:           cfg.Runtime.Model,
+		SourceURL:       sourceURL,
+		SourceRef:       sourceRef,
 	})
 	if err != nil {
 		return nil, err
@@ -662,6 +664,9 @@ func printWorkflowSuccess(out io.Writer, instance *provider.Instance, installRes
 	if url := runtimeHealthURL(instance, cfg); strings.TrimSpace(url) != "" {
 		fmt.Fprintf(out, "health url: %s\n", url)
 	}
+	if url := runtimeInvokeURL(instance, cfg); strings.TrimSpace(url) != "" {
+		fmt.Fprintf(out, "invoke url: %s\n", url)
+	}
 	if strings.TrimSpace(installResult.WorkingDir) != "" {
 		fmt.Fprintf(out, "working directory: %s\n", installResult.WorkingDir)
 	}
@@ -693,6 +698,24 @@ func runtimeHealthURL(instance *provider.Instance, cfg *config.Config) string {
 		port = cfg.Runtime.Port
 	}
 	return fmt.Sprintf("http://%s:%d/healthz", host, port)
+}
+
+func runtimeInvokeURL(instance *provider.Instance, cfg *config.Config) string {
+	if instance == nil || cfg == nil {
+		return ""
+	}
+	if !strings.EqualFold(strings.TrimSpace(cfg.Runtime.Provider), "aws-bedrock") {
+		return ""
+	}
+	host := strings.TrimSpace(instance.PublicIP)
+	if host == "" {
+		return ""
+	}
+	port := 8080
+	if cfg.Runtime.Port > 0 {
+		port = cfg.Runtime.Port
+	}
+	return fmt.Sprintf("http://%s:%d/v1/generate", host, port)
 }
 
 func printVerificationReport(out io.Writer, report verify.Report) {

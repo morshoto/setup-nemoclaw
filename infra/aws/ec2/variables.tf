@@ -82,6 +82,11 @@ variable "runtime_cidr" {
   default = "0.0.0.0/0"
 }
 
+variable "runtime_provider" {
+  type    = string
+  default = ""
+}
+
 variable "source_archive_url" {
   type = string
 }
