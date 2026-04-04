@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"openclaw/internal/config"
 	"openclaw/internal/runtimeinstall"
 )
 
@@ -29,35 +28,22 @@ func TestStatusCommandReportsIdleState(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	originalResolver := resolveRuntimeStatusURL
-	resolveRuntimeStatusURL = func(cfg *config.Config) (string, error) {
+	resolveRuntimeStatusURL = func(cfg *runtimeinstall.RuntimeConfig) (string, error) {
 		return server.URL, nil
 	}
 	t.Cleanup(func() { resolveRuntimeStatusURL = originalResolver })
 
 	dir := t.TempDir()
-	path := filepath.Join(dir, "openclaw.yaml")
+	path := filepath.Join(dir, "runtime.yaml")
 	writeConfig(t, path, `
-platform:
-  name: aws
-region:
-  name: us-east-1
-instance:
-  type: g5.xlarge
-  disk_size_gb: 40
-image:
-  name: ubuntu-24.04
-runtime:
-  endpoint: http://localhost:11434
-  model: llama3.2
-  port: 8080
-sandbox:
-  enabled: true
-  network_mode: public
+provider: aws-bedrock
+model: llama3.2
+port: 8080
 `)
 
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"openclaw", "--config", path, "status"}
+	os.Args = []string{"openclaw", "status", "--runtime-config", path}
 
 	app := New()
 	cmd := newRootCommand(app)
@@ -100,35 +86,22 @@ func TestStatusCommandReportsActiveAgents(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	originalResolver := resolveRuntimeStatusURL
-	resolveRuntimeStatusURL = func(cfg *config.Config) (string, error) {
+	resolveRuntimeStatusURL = func(cfg *runtimeinstall.RuntimeConfig) (string, error) {
 		return server.URL, nil
 	}
 	t.Cleanup(func() { resolveRuntimeStatusURL = originalResolver })
 
 	dir := t.TempDir()
-	path := filepath.Join(dir, "openclaw.yaml")
+	path := filepath.Join(dir, "runtime.yaml")
 	writeConfig(t, path, `
-platform:
-  name: aws
-region:
-  name: us-east-1
-instance:
-  type: g5.xlarge
-  disk_size_gb: 40
-image:
-  name: ubuntu-24.04
-runtime:
-  endpoint: http://localhost:11434
-  model: llama3.2
-  port: 8080
-sandbox:
-  enabled: true
-  network_mode: public
+provider: aws-bedrock
+model: llama3.2
+port: 8080
 `)
 
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"openclaw", "--config", path, "status"}
+	os.Args = []string{"openclaw", "status", "--runtime-config", path}
 
 	app := New()
 	cmd := newRootCommand(app)

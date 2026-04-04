@@ -11,8 +11,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-
-	"openclaw/internal/config"
+	"openclaw/internal/runtimeinstall"
 )
 
 type runtimeStatusClient interface {
@@ -26,23 +25,18 @@ var newRuntimeStatusClient = func() runtimeStatusClient {
 }
 
 func newStatusCommand(app *App) *cobra.Command {
+	var runtimeConfigPath string
+
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show runtime agent activity",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if strings.TrimSpace(app.opts.ConfigPath) == "" {
-				return errors.New("config file is required: pass --config <path>")
-			}
-
-			cfg, err := config.Load(app.opts.ConfigPath)
+			runtimeCfg, err := loadRuntimeConfig(runtimeConfigPath)
 			if err != nil {
 				return err
 			}
-			if err := config.Validate(cfg); err != nil {
-				return err
-			}
 
-			url, err := resolveRuntimeStatusURL(cfg)
+			url, err := resolveRuntimeStatusURL(runtimeCfg)
 			if err != nil {
 				return err
 			}
@@ -57,14 +51,15 @@ func newStatusCommand(app *App) *cobra.Command {
 		},
 	}
 
+	cmd.Flags().StringVar(&runtimeConfigPath, "runtime-config", "/opt/openclaw/runtime.yaml", "path to the runtime config on the local host")
 	return cmd
 }
 
-func runtimeStatusURL(cfg *config.Config) (string, error) {
+func runtimeStatusURL(cfg *runtimeinstall.RuntimeConfig) (string, error) {
 	if cfg == nil {
 		return "", errors.New("runtime status requires a config")
 	}
-	port := cfg.Runtime.Port
+	port := cfg.Port
 	if port <= 0 {
 		port = 8080
 	}
