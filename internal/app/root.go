@@ -154,6 +154,7 @@ func newInitCommand(app *App) *cobra.Command {
 				return newAWSProvider(app.opts.Profile, computeClass)
 			}, existing)
 			wizard.AWSProfile = app.opts.Profile
+			wizard.GitHubSetup = ensureGitHubSSHAccess
 			cfg, err := wizard.Run(cmd.Context())
 			if err != nil {
 				return err
