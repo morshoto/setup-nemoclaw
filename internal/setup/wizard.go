@@ -178,6 +178,12 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 		}
 	}
 
+	agentName, err := w.Prompter.Text("Agent name", defaultAgentName(w.Existing))
+	if err != nil {
+		return nil, err
+	}
+	agentName = sanitizeAgentName(agentName)
+
 	if w.GitHubSetup != nil {
 		connectGitHub, err := w.Prompter.Confirm("Authenticate Git with your GitHub credentials?", true)
 		if err != nil {
@@ -289,6 +295,7 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 	}
 	fmt.Fprintf(w.Out, "infra backend: %s\n", cfg.Infra.Backend)
 	fmt.Fprintf(w.Out, "terraform module: %s\n", cfg.Infra.ModuleDir)
+	fmt.Fprintf(w.Out, "agent name: %s\n", agentName)
 	fmt.Fprintf(w.Out, "use NemoClaw: %t\n", cfg.Sandbox.UseNemoClaw)
 	fmt.Fprintf(w.Out, "runtime provider: %s\n", cfg.Runtime.Provider)
 	if cfg.Runtime.Provider == "codex" {
@@ -328,6 +335,21 @@ func defaultRuntimeProvider(existing *config.Config) string {
 		return "codex"
 	}
 	return provider
+}
+
+func defaultAgentName(existing *config.Config) string {
+	if existing == nil {
+		return "default"
+	}
+	return sanitizeAgentName(strings.TrimSpace(existing.Infra.ModuleDir))
+}
+
+func sanitizeAgentName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "default"
+	}
+	return name
 }
 
 func defaultRuntimeModel(provider string) string {

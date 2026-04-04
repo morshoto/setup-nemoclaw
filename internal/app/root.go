@@ -139,6 +139,7 @@ func newConfigValidateCommand(app *App) *cobra.Command {
 func newInitCommand(app *App) *cobra.Command {
 	var agentsDir string
 	var provisionNow bool
+	const defaultAgentName = "default"
 
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -166,7 +167,7 @@ func newInitCommand(app *App) *cobra.Command {
 				return err
 			}
 
-			agentName, err := session.Text("Agent name", "")
+			agentName, err := session.Text("Agent name", defaultAgentName)
 			if err != nil {
 				return err
 			}

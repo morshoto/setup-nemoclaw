@@ -123,6 +123,53 @@ func TestInitWritesConfigFile(t *testing.T) {
 	}
 }
 
+func TestInitUsesDefaultAgentNameWhenBlank(t *testing.T) {
+	restore := stubAWSProviderFactory()
+	defer restore()
+	stubGitHubSSHSetup(t)
+
+	dir := t.TempDir()
+	agentsDir := filepath.Join(dir, "agents")
+	configPath := filepath.Join(agentsDir, "default", "config.yaml")
+	input := strings.Join([]string{
+		"1",                      // platform aws
+		"",                       // accept default GPU compute mode
+		"2",                      // region us-east-1
+		"",                       // accept default instance g5.xlarge
+		"1",                      // image ubuntu-24.04
+		"20",                     // disk size
+		"",                       // accept default public network mode
+		"demo-key",               // ssh key pair name
+		"/tmp/demo.pem",          // ssh private key
+		"203.0.113.0/24",         // ssh cidr
+		"ubuntu",                 // ssh user
+		"",                       // authenticate Git with your GitHub credentials
+		"y",                      // use NemoClaw
+		"1",                      // provider codex
+		"http://localhost:11434", // endpoint
+		"y",                      // confirm summary
+		"",                       // accept default agent name
+	}, "\n") + "\n"
+
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"openclaw", "--profile", "sso-dev", "init", "--agents-dir", agentsDir}
+
+	app := New()
+	cmd := newRootCommand(app)
+	cmd.SetIn(strings.NewReader(input))
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stdout)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if _, err := os.Stat(configPath); err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+}
+
 func TestInitSupportsCPUComputeMode(t *testing.T) {
 	original := newAWSProvider
 	newAWSProvider = func(profile, computeClass string) provider.CloudProvider {
