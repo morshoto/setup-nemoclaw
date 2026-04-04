@@ -176,10 +176,12 @@ func TestRootHelpGroupsCommands(t *testing.T) {
 		"Setup",
 		"Provision",
 		"Runtime",
+		"Integrations",
 		"Inspect",
 		"Support",
 		"init",
 		"create",
+		"slack",
 		"status",
 		"verify",
 	} {
@@ -903,6 +905,13 @@ sandbox:
 	}
 	if generatedProfile != "sso-dev" {
 		t.Fatalf("generated profile = %q, want sso-dev", generatedProfile)
+	}
+	loadedCfg, err := config.Load(filepath.Join(agentsDir, "beta", "config.yaml"))
+	if err != nil {
+		t.Fatalf("Load(config) error = %v", err)
+	}
+	if loadedCfg.Slack.RuntimeURL != "http://203.0.113.10:9090" {
+		t.Fatalf("slack runtime url = %q, want http://203.0.113.10:9090", loadedCfg.Slack.RuntimeURL)
 	}
 }
 

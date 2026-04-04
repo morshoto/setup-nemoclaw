@@ -61,6 +61,7 @@ var rootCommandGroups = []*cobra.Group{
 	{ID: "setup", Title: "Setup"},
 	{ID: "provision", Title: "Provision"},
 	{ID: "runtime", Title: "Runtime"},
+	{ID: "integrations", Title: "Integrations"},
 	{ID: "inspect", Title: "Inspect"},
 	{ID: "support", Title: "Support"},
 }

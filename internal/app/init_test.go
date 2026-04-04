@@ -122,6 +122,20 @@ func TestInitWritesConfigFile(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Summary") {
 		t.Fatalf("stdout = %q, want summary", stdout.String())
 	}
+
+	envPath := filepath.Join(agentsDir, "alpha", ".env")
+	envData, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatalf("ReadFile(env) error = %v", err)
+	}
+	for _, fragment := range []string{
+		"SLACK_BOT_TOKEN=",
+		"SLACK_APP_TOKEN=",
+	} {
+		if !strings.Contains(string(envData), fragment) {
+			t.Fatalf("env file %q missing %q", string(envData), fragment)
+		}
+	}
 }
 
 func TestInitUsesDefaultAgentNameWhenBlank(t *testing.T) {
@@ -168,6 +182,9 @@ func TestInitUsesDefaultAgentNameWhenBlank(t *testing.T) {
 	}
 	if _, err := os.Stat(configPath); err != nil {
 		t.Fatalf("Stat() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(agentsDir, "default", ".env")); err != nil {
+		t.Fatalf("Stat(env) error = %v", err)
 	}
 }
 

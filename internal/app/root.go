@@ -45,6 +45,7 @@ func newRootCommand(app *App) *cobra.Command {
 	rootCmd.AddCommand(newConfigCommand(app))
 	rootCmd.AddCommand(newStatusCommand(app))
 	rootCmd.AddCommand(newQuotaCommand(app))
+	rootCmd.AddCommand(newSlackCommand(app))
 	rootCmd.AddCommand(newInitCommand(app))
 	rootCmd.AddCommand(newCreateCommand(app))
 	rootCmd.AddCommand(newServeCommand(app))
@@ -181,6 +182,11 @@ func newInitCommand(app *App) *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "configuration written to %s\n", configPath)
+			if envPath, created, err := ensureAgentEnvTemplate(configPath); err != nil {
+				return err
+			} else if created {
+				fmt.Fprintf(cmd.OutOrStdout(), "environment template written to %s\n", envPath)
+			}
 			if !provisionNow {
 				fmt.Fprintln(cmd.OutOrStdout(), "provisioning skipped")
 				fmt.Fprintf(cmd.OutOrStdout(), "next step: run %s when you are ready\n", commandRef(cmd.OutOrStdout(), "openclaw", "create", "--config", configPath))
@@ -200,6 +206,10 @@ func newInitCommand(app *App) *cobra.Command {
 					"run "+commandRef(cmd.OutOrStdout(), "openclaw", "create", "--config", configPath)+" once the host is ready",
 				)
 			}
+			cfg.Slack.RuntimeURL = runtimeBaseURL(instance, cfg)
+			if err := config.Save(configPath, cfg); err != nil {
+				return err
+			}
 			printWorkflowSuccess(cmd.OutOrStdout(), instance, installResult, verifyReport, configPath, cfg, instanceTarget(instance), true)
 			return nil
 		},
@@ -217,6 +227,16 @@ func newQuotaCommand(app *App) *cobra.Command {
 		GroupID: "inspect",
 	}
 	cmd.AddCommand(newQuotaCheckCommand(app))
+	return cmd
+}
+
+func newSlackCommand(app *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "slack",
+		Short:   "Run Slack integration commands",
+		GroupID: "integrations",
+	}
+	cmd.AddCommand(newSlackServeCommand(app))
 	return cmd
 }
 

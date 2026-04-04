@@ -876,6 +876,21 @@ func printWorkflowSuccess(out io.Writer, instance *provider.Instance, installRes
 	fmt.Fprintln(out, "next step: keep the runtime config and SSH target handy for future verify runs")
 }
 
+func runtimeBaseURL(instance *provider.Instance, cfg *config.Config) string {
+	if instance == nil {
+		return ""
+	}
+	host := strings.TrimSpace(instance.PublicIP)
+	if host == "" {
+		return ""
+	}
+	port := 8080
+	if cfg != nil && cfg.Runtime.Port > 0 {
+		port = cfg.Runtime.Port
+	}
+	return fmt.Sprintf("http://%s:%d", host, port)
+}
+
 func runtimeHealthURL(instance *provider.Instance, cfg *config.Config) string {
 	if instance == nil {
 		return ""

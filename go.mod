@@ -29,7 +29,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/signin v1.0.9 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.14 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.18 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/slack-go/slack v0.20.0 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	golang.org/x/sys v0.36.0 // indirect
 )

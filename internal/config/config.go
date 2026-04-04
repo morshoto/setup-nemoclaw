@@ -30,6 +30,7 @@ type Config struct {
 	Instance InstanceConfig `yaml:"instance"`
 	Image    ImageConfig    `yaml:"image"`
 	Runtime  RuntimeConfig  `yaml:"runtime"`
+	Slack    SlackConfig    `yaml:"slack,omitempty"`
 	SSH      SSHConfig      `yaml:"ssh,omitempty"`
 	Infra    InfraConfig    `yaml:"infra,omitempty"`
 	Sandbox  SandboxConfig  `yaml:"sandbox"`
@@ -69,6 +70,12 @@ type RuntimeConfig struct {
 
 type CodexConfig struct {
 	SecretID string `yaml:"secret_id,omitempty"`
+}
+
+type SlackConfig struct {
+	RuntimeURL      string   `yaml:"runtime_url,omitempty"`
+	BotUserID       string   `yaml:"bot_user_id,omitempty"`
+	AllowedChannels []string `yaml:"allowed_channels,omitempty"`
 }
 
 type SSHConfig struct {
