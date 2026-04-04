@@ -631,6 +631,171 @@ sandbox:
 	}
 }
 
+func TestCreateCommandPromptsForConfigFileWhenConfigPathMissing(t *testing.T) {
+	restore := stubAWSProviderFactory()
+	defer restore()
+	restoreSourceArchive := stubSourceArchiveURL(t)
+	defer restoreSourceArchive()
+
+	originalBuildRuntimeBinary := runtimeinstall.BuildRuntimeBinaryFunc
+	runtimeinstall.BuildRuntimeBinaryFunc = func(ctx context.Context) (string, error) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "openclaw")
+		if err := os.WriteFile(path, []byte("binary"), 0o700); err != nil {
+			return "", err
+		}
+		return path, nil
+	}
+	defer func() { runtimeinstall.BuildRuntimeBinaryFunc = originalBuildRuntimeBinary }()
+
+	originalBackend := newTerraformBackend
+	originalDeriveSSHPublicKey := deriveSSHPublicKeyFunc
+	originalEnsureSSHPrivateKey := ensureSSHPrivateKeyFunc
+	ensureSSHPrivateKeyFunc = func(ctx context.Context, privateKeyPath string) (string, error) {
+		return privateKeyPath, nil
+	}
+	deriveSSHPublicKeyFunc = func(ctx context.Context, privateKeyPath string) (string, error) {
+		return "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestPublicKey openclaw", nil
+	}
+	newTerraformBackend = func(profile string, cfg *config.Config) (infratf.InfraBackend, error) {
+		return fakeTerraformBackend{
+			output: &infratf.InfraOutput{
+				InstanceID:         "i-0123456789abcdef0",
+				PublicIP:           "203.0.113.10",
+				PrivateIP:          "10.0.0.10",
+				ConnectionInfo:     "ssh -i <your-key>.pem ubuntu@203.0.113.10",
+				SecurityGroupID:    "sg-0123456789abcdef0",
+				SecurityGroupRules: []string{"allow tcp/22 from 203.0.113.0/24", "allow tcp/8080 from 0.0.0.0/0"},
+				Region:             cfg.Region.Name,
+				NetworkMode:        "public",
+			},
+		}, nil
+	}
+	defer func() { newTerraformBackend = originalBackend }()
+	defer func() { deriveSSHPublicKeyFunc = originalDeriveSSHPublicKey }()
+	defer func() { ensureSSHPrivateKeyFunc = originalEnsureSSHPrivateKey }()
+
+	original := newSSHExecutor
+	newSSHExecutor = func(cfg host.SSHConfig) host.Executor {
+		return flexibleExecutor{
+			run: func(command string, args ...string) (host.CommandResult, error) {
+				key := command + " " + strings.Join(args, " ")
+				switch {
+				case strings.TrimSpace(key) == "true":
+					return host.CommandResult{}, nil
+				case command == "test" && strings.Join(args, " ") == "-f /opt/openclaw/bootstrap.done":
+					return host.CommandResult{}, nil
+				case key == "nvidia-smi -L":
+					return host.CommandResult{Stdout: "GPU 0: demo"}, nil
+				case key == "docker info":
+					return host.CommandResult{Stdout: "Docker Engine"}, nil
+				case key == "docker info --format {{json .Runtimes}}":
+					return host.CommandResult{Stdout: `{"nvidia":{}}`}, nil
+				case key == "docker run --rm --gpus all --pull=never nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi":
+					return host.CommandResult{Stdout: "NVIDIA-SMI"}, nil
+				case command == "test" && strings.Join(args, " ") == "-s /opt/openclaw/runtime.yaml":
+					return host.CommandResult{}, nil
+				case command == "cat" && strings.Join(args, " ") == "/opt/openclaw/runtime.yaml":
+					return host.CommandResult{Stdout: "use_nemoclaw: true\nnim_endpoint: http://localhost:11434\nmodel: llama3.2\nport: 9090\n"}, nil
+				case command == "sh" && len(args) >= 2 && args[0] == "-lc" && strings.Contains(args[1], "curl --max-time 5 -fsS"):
+					return host.CommandResult{Stdout: "ok"}, nil
+				case command == "sh" && len(args) >= 2 && args[0] == "-lc" && strings.Contains(args[1], "docker ps --filter name='^/openclaw$'"):
+					return host.CommandResult{Stdout: "openclaw Up 10 seconds"}, nil
+				case command == "sh" && len(args) >= 2 && args[0] == "-lc":
+					return host.CommandResult{Stdout: "ok"}, nil
+				default:
+					return host.CommandResult{}, errors.New("unexpected command: " + key)
+				}
+			},
+		}
+	}
+	defer func() { newSSHExecutor = original }()
+
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "demo.pem")
+	if err := os.WriteFile(keyPath, []byte("dummy"), 0o600); err != nil {
+		t.Fatalf("WriteFile(key) error = %v", err)
+	}
+	agentsDir := filepath.Join(dir, "agents")
+	if err := os.MkdirAll(filepath.Join(agentsDir, "alpha"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(alpha) error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(agentsDir, "beta"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(beta) error = %v", err)
+	}
+	writeConfig(t, filepath.Join(agentsDir, "alpha", "config.yaml"), `
+platform:
+  name: aws
+region:
+  name: us-east-1
+ssh:
+  key_name: demo-key
+  private_key_path: `+keyPath+`
+  cidr: 203.0.113.0/24
+  user: ubuntu
+instance:
+  type: g5.xlarge
+  disk_size_gb: 40
+  network_mode: public
+image:
+  name: ubuntu-24.04
+runtime:
+  endpoint: http://localhost:11434
+  model: llama3.2
+  port: 8080
+sandbox:
+  enabled: true
+  network_mode: public
+  use_nemoclaw: true
+`)
+	writeConfig(t, filepath.Join(agentsDir, "beta", "config.yaml"), `
+platform:
+  name: aws
+region:
+  name: us-east-1
+ssh:
+  key_name: demo-key
+  private_key_path: `+keyPath+`
+  cidr: 203.0.113.0/24
+  user: ubuntu
+instance:
+  type: g5.xlarge
+  disk_size_gb: 40
+  network_mode: public
+image:
+  name: ubuntu-24.04
+runtime:
+  endpoint: http://localhost:11434
+  model: llama3.2
+  port: 9090
+sandbox:
+  enabled: true
+  network_mode: public
+  use_nemoclaw: true
+`)
+
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"openclaw", "--profile", "sso-dev", "create", "--agents-dir", agentsDir}
+
+	app := New()
+	cmd := newRootCommand(app)
+	cmd.SetIn(strings.NewReader("2\n"))
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stdout)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	got := stdout.String()
+	for _, fragment := range []string{"instance id: i-0123456789abcdef0", "health url: http://203.0.113.10:9090/healthz", "verification summary"} {
+		if !strings.Contains(got, fragment) {
+			t.Fatalf("stdout = %q, want %q", got, fragment)
+		}
+	}
+}
+
 func stubAWSProviderFactory() func() {
 	original := newAWSProvider
 	newAWSProvider = func(profile, computeClass string) provider.CloudProvider {
