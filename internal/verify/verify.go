@@ -74,7 +74,7 @@ func (v Verifier) Verify(ctx context.Context, req Request) (Report, error) {
 
 	report := Report{RuntimeConfigPath: runtimeConfigPath}
 	report.Checks = append(report.Checks,
-		runDockerCheck(ctx, v.Host),
+		runOpenClawProcessCheck(ctx, v.Host),
 		runRuntimeConfigCheck(ctx, v.Host, runtimeConfigPath, req.Config),
 	)
 	if req.Config == nil || config.EffectiveComputeClass(req.Config.Compute.Class) == config.ComputeClassGPU {
@@ -101,7 +101,7 @@ func (v Verifier) Verify(ctx context.Context, req Request) (Report, error) {
 			Name:        "openclaw health",
 			Passed:      false,
 			Message:     err.Error(),
-			Remediation: "Ensure the runtime config defines a valid port and the OpenClaw container is listening on that port.",
+			Remediation: "Ensure the runtime config defines a valid port and the OpenClaw service is listening on that port.",
 		})
 	} else {
 		report.Checks = append(report.Checks, runOpenClawHealthCheck(ctx, v.Host, port))
@@ -109,7 +109,6 @@ func (v Verifier) Verify(ctx context.Context, req Request) (Report, error) {
 	if isBedrockProvider(req.Config) {
 		report.Checks = append(report.Checks, runBedrockGenerateCheck(ctx, v.Host, port))
 	}
-	report.Checks = append(report.Checks, runOpenClawContainerCheck(ctx, v.Host))
 	return report, nil
 }
 
@@ -276,10 +275,6 @@ exit 127
 	return Check{Name: "nim endpoint connectivity", Passed: true, Message: msg}
 }
 
-func runDockerCheck(ctx context.Context, exec host.Executor) Check {
-	return runCommandCheck(ctx, exec, "docker readiness", "docker", []string{"info"}, "Install Docker and ensure the daemon is running.")
-}
-
 func runOpenClawProcessCheck(ctx context.Context, exec host.Executor) Check {
 	script := `
 if command -v docker >/dev/null 2>&1; then
@@ -383,7 +378,7 @@ exit 127
 			Name:        "openclaw health",
 			Passed:      false,
 			Message:     msg,
-			Remediation: "Ensure the OpenClaw container is listening on localhost and responding to /healthz.",
+			Remediation: "Ensure the OpenClaw service is listening on localhost and responding to /healthz.",
 		}
 	}
 	msg := strings.TrimSpace(result.Stdout)
@@ -425,40 +420,4 @@ exit 127
 		msg = fmt.Sprintf("reachable: %s", endpoint)
 	}
 	return Check{Name: "bedrock generation", Passed: true, Message: msg}
-}
-
-func runOpenClawContainerCheck(ctx context.Context, exec host.Executor) Check {
-	script := `
-if command -v docker >/dev/null 2>&1; then
-  if docker ps --filter name='^/openclaw$' --format '{{.Names}} {{.Status}}' | grep -q '^openclaw '; then
-    docker ps --filter name='^/openclaw$' --format '{{.Names}} {{.Status}}'
-    exit 0
-  fi
-  if command -v sudo >/dev/null 2>&1; then
-    if sudo docker ps --filter name='^/openclaw$' --format '{{.Names}} {{.Status}}' | grep -q '^openclaw '; then
-      sudo docker ps --filter name='^/openclaw$' --format '{{.Names}} {{.Status}}'
-      exit 0
-    fi
-  fi
-fi
-exit 1
-`
-	result, err := exec.Run(ctx, "sh", "-lc", script)
-	if err != nil {
-		msg := strings.TrimSpace(result.Stderr)
-		if msg == "" {
-			msg = "openclaw Docker container was not found"
-		}
-		return Check{
-			Name:        "openclaw container",
-			Passed:      false,
-			Message:     msg,
-			Remediation: "Start the OpenClaw Docker container before verifying.",
-		}
-	}
-	msg := strings.TrimSpace(result.Stdout)
-	if msg == "" {
-		msg = "openclaw Docker container is running"
-	}
-	return Check{Name: "openclaw container", Passed: true, Message: msg}
 }

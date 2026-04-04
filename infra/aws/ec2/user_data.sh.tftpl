@@ -5,7 +5,7 @@ exec > >(tee /var/log/openclaw-bootstrap.log | logger -t openclaw-bootstrap -s 2
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl openssh-client tar
+apt-get install -y ca-certificates openssh-client
 
 install -d -m 0755 /opt/openclaw/src
 install -d -m 0755 /opt/openclaw
@@ -37,11 +37,5 @@ EOF
   chown ubuntu:ubuntu /home/ubuntu/.ssh/known_hosts
   chmod 0600 /home/ubuntu/.ssh/known_hosts
 %{ endif }
-
-curl -fsSL "${source_archive_url}" | tar -xz -C /opt/openclaw/src --strip-components=1
-
-if [ "${runtime_provider}" = "aws-bedrock" ]; then
-  echo "aws-bedrock runtime selected; runtime validation will happen during install and verify"
-fi
 
 touch /opt/openclaw/bootstrap.done

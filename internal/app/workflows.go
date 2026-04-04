@@ -382,11 +382,33 @@ func runCreateWorkflow(ctx context.Context, profile string, cfg *config.Config, 
 		return instance, installResult, verify.Report{}, err
 	}
 
+	var resolvedTarget string
+	if err = progress.Run(ctx, "installing runtime", func(runCtx context.Context) error {
+		var err error
+		installResult, resolvedTarget, err = runInstallWorkflow(runCtx, profile, cfg, installOptions{
+			Target:            target,
+			SSHUser:           opts.SSHUser,
+			SSHKey:            opts.SSHKey,
+			SSHPort:           opts.SSHPort,
+			WorkingDir:        opts.WorkingDir,
+			Port:              opts.Port,
+			UseNemoClaw:       opts.UseNemoClaw,
+			DisableNemoClaw:   opts.DisableNemoClaw,
+			RuntimeConfigPath: installResult.ConfigPath,
+		})
+		return err
+	}); err != nil {
+		return instance, installResult, verify.Report{}, err
+	}
+	if strings.TrimSpace(resolvedTarget) == "" {
+		resolvedTarget = target
+	}
+
 	var verifyReport verify.Report
 	if err = progress.Run(ctx, "verifying runtime", func(runCtx context.Context) error {
 		var err error
 		verifyReport, _, err = runVerifyWorkflow(runCtx, profile, cfg, verifyOptions{
-			Target:            target,
+			Target:            resolvedTarget,
 			SSHUser:           opts.SSHUser,
 			SSHKey:            opts.SSHKey,
 			SSHPort:           opts.SSHPort,

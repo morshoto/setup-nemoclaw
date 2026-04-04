@@ -29,7 +29,7 @@ If you omit it and run interactively, the CLI will prompt you to choose a profil
 
 This command reads the YAML config, resolves the SSH public key, stages the current working tree as a bootstrap archive, and writes Terraform-compatible `terraform.tfvars` variables.
 It also carries the configured GitHub SSH private key path onto the EC2 bootstrap so the host can clone private repositories after startup.
-The generated file includes deploy-time values such as `aws_profile`, `runtime_port`, `runtime_cidr`, and `source_archive_url`, so Terraform can create the EC2 instance and prepare the host from the staged source archive.
+The generated file includes deploy-time values such as `aws_profile`, `runtime_port`, `runtime_cidr`, and `source_archive_url`, so Terraform can create the EC2 instance and leave runtime installation to the SSH-based `install` stage.
 Treat it as a deploy helper rather than a pure formatter: it depends on a usable SSH private key path, a resolvable AWS profile, the current git worktree state, and a GitHub SSH key if you want the host to clone private repos.
 
 ## 3. Create the Terraform infrastructure
@@ -60,7 +60,7 @@ If the instance is private, connect from a bastion or SSM session instead.
 
 ## 5. Wait for bootstrap
 
-The EC2 user-data script prepares the host, writes the runtime config, stages the source archive for later use, and marks bootstrap complete.
+The EC2 user-data script prepares the host, writes the runtime config, and marks bootstrap complete.
 You can watch the bootstrap log over SSH if you want to inspect what happened:
 
 ```bash
