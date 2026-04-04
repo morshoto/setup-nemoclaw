@@ -11,10 +11,11 @@ import (
 )
 
 var (
-	runGHAuthStatusFunc = runGHAuthStatus
-	runGHAuthLoginFunc  = runGHAuthLogin
-	listGHSSHKeysFunc   = listGHSSHKeys
-	addGHSSHKeyFunc     = addGHSSHKey
+	runGHAuthStatusFunc  = runGHAuthStatus
+	runGHAuthLoginFunc   = runGHAuthLogin
+	runGHAuthRefreshFunc = runGHAuthRefresh
+	listGHSSHKeysFunc    = listGHSSHKeys
+	addGHSSHKeyFunc      = addGHSSHKey
 )
 
 func ensureGitHubSSHAccess(ctx context.Context, privateKeyPath string) error {
@@ -44,7 +45,17 @@ func ensureGitHubSSHAccess(ctx context.Context, privateKeyPath string) error {
 
 	exists, err := githubSSHKeyExists(ctx, publicKey)
 	if err != nil {
-		return err
+		if isGitHubAdminPublicKeyScopeError(err) {
+			if refreshErr := runGHAuthRefreshFunc(ctx); refreshErr != nil {
+				return refreshErr
+			}
+			exists, err = githubSSHKeyExists(ctx, publicKey)
+			if err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
 	}
 	if exists {
 		return nil
@@ -61,6 +72,15 @@ func ensureGitHubSSHAccess(ctx context.Context, privateKeyPath string) error {
 		return fmt.Errorf("write github public key: %w", err)
 	}
 	if err := addGHSSHKeyFunc(ctx, publicKeyPath); err != nil {
+		if isGitHubAdminPublicKeyScopeError(err) {
+			if refreshErr := runGHAuthRefreshFunc(ctx); refreshErr != nil {
+				return refreshErr
+			}
+			if retryErr := addGHSSHKeyFunc(ctx, publicKeyPath); retryErr != nil {
+				return retryErr
+			}
+			return nil
+		}
 		return err
 	}
 	return nil
@@ -99,6 +119,17 @@ func runGHAuthLogin(ctx context.Context) error {
 	return nil
 }
 
+func runGHAuthRefresh(ctx context.Context) error {
+	cmd := exec.CommandContext(ctx, "gh", "auth", "refresh", "--hostname", "github.com", "--scopes", "admin:public_key")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("run gh auth refresh: %w", err)
+	}
+	return nil
+}
+
 func listGHSSHKeys(ctx context.Context) ([]string, error) {
 	cmd := exec.CommandContext(ctx, "gh", "api", "user/keys", "--jq", ".[].key")
 	out, err := cmd.CombinedOutput()
@@ -132,4 +163,12 @@ func addGHSSHKey(ctx context.Context, publicKeyPath string) error {
 		return fmt.Errorf("add github ssh key: %w", err)
 	}
 	return nil
+}
+
+func isGitHubAdminPublicKeyScopeError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "admin:public_key") || strings.Contains(msg, "public ssh key")
 }
