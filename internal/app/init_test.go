@@ -81,7 +81,6 @@ func TestInitWritesConfigFile(t *testing.T) {
 		"",                       // authenticate Git with your GitHub credentials
 		"y",                      // use NemoClaw
 		"1",                      // provider codex
-		"sk-test",                // OpenAI API key
 		"http://localhost:11434", // endpoint
 		"llama3.2",               // model
 		"y",                      // confirm summary
@@ -123,7 +122,6 @@ func TestInitWritesConfigFile(t *testing.T) {
 		"module_dir: infra/aws/ec2",
 		"use_nemoclaw: true",
 		"provider: codex",
-		"secret_id: arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:openclaw/codex-api-key",
 		"endpoint: http://localhost:11434",
 		"model: llama3.2",
 	} {
@@ -165,7 +163,6 @@ func TestInitSupportsCPUComputeMode(t *testing.T) {
 		"",
 		"y",
 		"1",
-		"sk-test",
 		"", // accept placeholder external endpoint
 		"", // accept default model
 		"y",
@@ -312,7 +309,6 @@ sandbox:
 		"",
 		"y",
 		"1",
-		"sk-test",
 		"http://localhost:11434",
 		"llama3.2",
 		"y",
@@ -375,7 +371,6 @@ func TestInitContinuesWhenAWSAuthCheckIsPermissionDenied(t *testing.T) {
 		"",                       // authenticate Git with your GitHub credentials
 		"y",                      // use NemoClaw
 		"1",                      // provider codex
-		"sk-test",                // OpenAI API key
 		"http://localhost:11434", // endpoint
 		"llama3.2",               // model
 		"y",                      // confirm summary
@@ -434,7 +429,6 @@ func TestInitContinuesWhenAWSAuthCheckFailsAtSTS(t *testing.T) {
 		"",                       // authenticate Git with your GitHub credentials
 		"y",                      // use NemoClaw
 		"1",                      // provider codex
-		"sk-test",                // OpenAI API key
 		"http://localhost:11434", // endpoint
 		"llama3.2",               // model
 		"y",                      // confirm summary
@@ -493,7 +487,6 @@ func TestInitFallsBackWhenAWSImageLookupIsPermissionDenied(t *testing.T) {
 		"",                       // authenticate Git with your GitHub credentials
 		"y",                      // use NemoClaw
 		"1",                      // provider codex
-		"sk-test",                // OpenAI API key
 		"http://localhost:11434", // endpoint
 		"llama3.2",               // model
 		"y",                      // confirm summary

@@ -204,10 +204,6 @@ func Validate(cfg *Config) error {
 			v.Add("runtime.public_cidr", err.Error())
 		}
 	}
-	if strings.TrimSpace(cfg.Runtime.Provider) == "codex" && strings.TrimSpace(cfg.Runtime.Codex.SecretID) == "" {
-		v.Add("runtime.codex.secret_id", "is required when runtime.provider is codex")
-	}
-
 	if mode := EffectiveNetworkMode(cfg); mode != "" && mode != "public" && mode != "private" {
 		v.Add("instance.network_mode", "must be public or private")
 	}

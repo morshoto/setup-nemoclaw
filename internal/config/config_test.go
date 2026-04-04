@@ -24,8 +24,6 @@ runtime:
   endpoint: http://localhost:11434
   model: llama3.2
   provider: codex
-  codex:
-    secret_id: arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:openclaw/codex-api-key
 sandbox:
   enabled: true
 `)
@@ -34,6 +32,21 @@ sandbox:
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestValidateAllowsCodexWithoutSecretID(t *testing.T) {
+	cfg := &Config{
+		Platform: PlatformConfig{Name: PlatformAWS},
+		Region:   RegionConfig{Name: "us-east-1"},
+		Instance: InstanceConfig{Type: "t3.medium", DiskSizeGB: 20},
+		Image:    ImageConfig{Name: "ubuntu-24.04"},
+		Runtime:  RuntimeConfig{Endpoint: "http://localhost:11434", Model: "llama3.2", Provider: "codex"},
+		Sandbox:  SandboxConfig{Enabled: true},
+	}
+
 	if err := Validate(cfg); err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
