@@ -110,6 +110,7 @@ func TestInitWritesConfigFile(t *testing.T) {
 		"user: ubuntu",
 		"backend: terraform",
 		"module_dir: infra/aws/ec2",
+		"aws_profile: sso-dev",
 		"use_nemoclaw: true",
 		"provider: codex",
 		"endpoint: http://localhost:11434",

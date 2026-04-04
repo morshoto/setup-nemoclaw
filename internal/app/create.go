@@ -1,8 +1,11 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -44,6 +47,11 @@ func newCreateCommand(app *App) *cobra.Command {
 			if err := config.Validate(cfg); err != nil {
 				return err
 			}
+			profile, err := selectCreateAWSProfile(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), firstNonEmpty(app.opts.Profile, cfg.Infra.AWSProfile))
+			if err != nil {
+				return err
+			}
+			app.opts.Profile = profile
 			effectiveSSHKeyName := firstNonEmpty(sshKeyName, cfg.SSH.KeyName)
 			effectiveSSHCIDR := firstNonEmpty(sshCIDR, cfg.SSH.CIDR)
 			if err := validateCreateWorkflowSSHFlags(cfg, effectiveSSHKeyName, effectiveSSHCIDR); err != nil {
@@ -56,7 +64,7 @@ func newCreateCommand(app *App) *cobra.Command {
 			logger := loggerFromContext(cmd.Context())
 			logger.Info("starting create workflow")
 			progress := newProgressRenderer(cmd.OutOrStdout())
-			instance, installResult, verifyReport, err := runCreateWorkflow(cmd.Context(), app.opts.Profile, cfg, createOptions{
+			instance, installResult, verifyReport, err := runCreateWorkflow(cmd.Context(), profile, cfg, createOptions{
 				SSHKeyName:      sshKeyName,
 				SSHCIDR:         sshCIDR,
 				SSHUser:         sshUser,
@@ -125,6 +133,47 @@ func selectAgentConfigPath(session *prompt.Session, agentsDir string) (string, e
 		}
 	}
 	return "", fmt.Errorf("selected configuration file %q not found", selected)
+}
+
+func selectCreateAWSProfile(ctx context.Context, in io.Reader, out io.Writer, existing string) (string, error) {
+	profile := strings.TrimSpace(existing)
+	if profile != "" {
+		return profile, nil
+	}
+
+	defaultProfile := strings.TrimSpace(os.Getenv("AWS_PROFILE"))
+	if defaultProfile == "" {
+		defaultProfile = strings.TrimSpace(os.Getenv("AWS_DEFAULT_PROFILE"))
+	}
+	profiles, err := listAWSProfilesFunc(ctx)
+	if err != nil {
+		if defaultProfile != "" {
+			return defaultProfile, nil
+		}
+		session := prompt.NewSession(in, out)
+		value, promptErr := session.Text("AWS profile", "")
+		if promptErr != nil {
+			return "", promptErr
+		}
+		return strings.TrimSpace(value), nil
+	}
+
+	session := prompt.NewSession(in, out)
+	if len(profiles) == 0 {
+		value, err := session.Text("AWS profile", defaultProfile)
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(value), nil
+	}
+	if defaultProfile == "" && len(profiles) > 0 {
+		defaultProfile = profiles[0]
+	}
+	value, err := session.Select("Select AWS profile", profiles, defaultProfile)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(value), nil
 }
 
 func validateCreateWorkflowSSHFlags(cfg *config.Config, sshKeyName, sshCIDR string) error {

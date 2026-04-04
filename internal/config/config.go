@@ -80,8 +80,9 @@ type SSHConfig struct {
 }
 
 type InfraConfig struct {
-	Backend   string `yaml:"backend,omitempty"`
-	ModuleDir string `yaml:"module_dir,omitempty"`
+	Backend    string `yaml:"backend,omitempty"`
+	ModuleDir  string `yaml:"module_dir,omitempty"`
+	AWSProfile string `yaml:"aws_profile,omitempty"`
 }
 
 type SandboxConfig struct {

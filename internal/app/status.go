@@ -349,6 +349,9 @@ func formatInfraSummary(cfg config.InfraConfig) string {
 	if value := strings.TrimSpace(cfg.ModuleDir); value != "" {
 		parts = append(parts, "module_dir="+value)
 	}
+	if value := strings.TrimSpace(cfg.AWSProfile); value != "" {
+		parts = append(parts, "aws_profile="+value)
+	}
 	if len(parts) == 0 {
 		return ""
 	}
