@@ -1,0 +1,117 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Published version tag to promote, for example v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Promote draft release
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Download release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          gh release download "${VERSION}" -D release-assets
+
+      - name: Run smoke tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          binary="$(find release-assets -type f -name "openclaw_*_linux_amd64" -print -quit)"
+          if [[ -z "${binary}" ]]; then
+            echo "linux_amd64 release asset was not found"
+            exit 1
+          fi
+          chmod +x "${binary}"
+
+          smoke_config="$(mktemp)"
+          cat > "${smoke_config}" <<'EOF'
+          platform:
+            name: aws
+          region:
+            name: us-east-1
+          instance:
+            type: t3.medium
+            disk_size_gb: 20
+          image:
+            name: ubuntu-24.04
+          runtime:
+            endpoint: http://localhost:11434
+            model: llama3.2
+          sandbox:
+            enabled: false
+          EOF
+
+          "${binary}" version
+          "${binary}" config validate --config "${smoke_config}"
+
+          if [[ -n "${AWS_ACCESS_KEY_ID:-}" && -n "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
+            "${binary}" quota check --platform aws --region us-east-1 --instance-family g5
+          else
+            echo "AWS credentials are not configured; skipping quota smoke test"
+          fi
+
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${VERSION}" --jq '.id')"
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
+            -f draft=false \
+            -f make_latest=true
+
+      - name: Update release metadata
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          release_url="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${VERSION}"
+          release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${VERSION}" --jq '.id')"
+          published_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          jq -n \
+            --arg version "${VERSION}" \
+            --arg release_id "${release_id}" \
+            --arg release_url "${release_url}" \
+            --arg published_at "${published_at}" \
+            '{
+              version: $version,
+              release_id: $release_id,
+              release_url: $release_url,
+              published_at: $published_at,
+              status: "published"
+            }' > release-metadata.json
+
+          gh release upload "${VERSION}" release-metadata.json --clobber
+
+      - name: Publish summary
+        shell: bash
+        run: |
+          {
+            echo "## Release"
+            echo
+            echo "- version: ${VERSION}"
+            echo "- draft release promoted"
+            echo "- smoke tests: version, config validate"
+            echo "- quota smoke test: conditional on AWS credentials"
+          } >> "${GITHUB_STEP_SUMMARY}"

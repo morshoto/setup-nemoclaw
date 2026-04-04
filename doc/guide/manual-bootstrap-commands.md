@@ -78,10 +78,12 @@ test -f /opt/openclaw/bootstrap.done
 If you want to use the Codex CLI on your workstation, run:
 
 ```bash
-codex --login
+openclaw onboard --auth-choice openai-codex
 ```
 
 This opens the browser-based sign-in flow and stores the local Codex credential cache.
+If you prefer to invoke the CLI directly, `codex --login` is equivalent.
+You do not need to provide an OpenAI API key for this path.
 
 If you need to troubleshoot the OAuth flow, see:
 

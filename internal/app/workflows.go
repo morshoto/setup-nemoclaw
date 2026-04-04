@@ -477,7 +477,7 @@ func resolveCodexAPIKey(ctx context.Context, profile string, cfg *config.Config)
 	}
 	secretID := strings.TrimSpace(cfg.Runtime.Codex.SecretID)
 	if secretID == "" {
-		return "", errors.New("runtime.codex.secret_id is required when runtime.provider is codex")
+		return "", nil
 	}
 	return codexauth.LoadAPIKeyFunc(ctx, profile, cfg.Region.Name, secretID)
 }

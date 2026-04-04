@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"openclaw/internal/codexauth"
 	"openclaw/internal/config"
 	"openclaw/internal/prompt"
 	"openclaw/internal/provider"
@@ -201,16 +200,9 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 		return nil, err
 	}
 
-	codexSecretID := ""
-	codexAPIKey := ""
 	if runtimeProvider == "codex" {
-		codexAPIKey, err = w.Prompter.Secret("OpenAI API key", "")
-		if err != nil {
-			return nil, err
-		}
-		if strings.TrimSpace(codexAPIKey) == "" {
-			return nil, errors.New("OpenAI API key is required for Codex")
-		}
+		fmt.Fprintln(w.Out, "Codex auth uses the local browser login flow or existing signed-in state.")
+		fmt.Fprintln(w.Out, "If you are not already authenticated, run `openclaw onboard --auth-choice openai-codex` before provisioning.")
 	}
 
 	runtimePublicCIDR := "0.0.0.0/0"
@@ -231,9 +223,12 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 		}
 	}
 
-	model, err := w.Prompter.Text("Model name", defaultRuntimeModel(runtimeProvider))
-	if err != nil {
-		return nil, err
+	model := ""
+	if runtimeProvider != "codex" {
+		model, err = w.Prompter.Text("Model name", defaultRuntimeModel(runtimeProvider))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	cfg := &config.Config{
@@ -262,7 +257,6 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 			Model:      model,
 			Provider:   runtimeProvider,
 			PublicCIDR: runtimePublicCIDR,
-			Codex:      config.CodexConfig{SecretID: codexSecretID},
 		},
 	}
 
@@ -298,7 +292,7 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 	fmt.Fprintf(w.Out, "use NemoClaw: %t\n", cfg.Sandbox.UseNemoClaw)
 	fmt.Fprintf(w.Out, "runtime provider: %s\n", cfg.Runtime.Provider)
 	if cfg.Runtime.Provider == "codex" {
-		fmt.Fprintf(w.Out, "codex auth: configured\n")
+		fmt.Fprintf(w.Out, "codex auth: browser login or existing local auth\n")
 	}
 	if cfg.Runtime.Provider == "aws-bedrock" {
 		fmt.Fprintf(w.Out, "bedrock auth: uses instance role\n")
@@ -306,7 +300,9 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 	if strings.TrimSpace(cfg.Runtime.Endpoint) != "" {
 		fmt.Fprintf(w.Out, "NIM endpoint: %s\n", cfg.Runtime.Endpoint)
 	}
-	fmt.Fprintf(w.Out, "model: %s\n", cfg.Runtime.Model)
+	if strings.TrimSpace(cfg.Runtime.Model) != "" {
+		fmt.Fprintf(w.Out, "model: %s\n", cfg.Runtime.Model)
+	}
 
 	confirm, err := w.Prompter.Confirm("Write this configuration", true)
 	if err != nil {
@@ -314,14 +310,6 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 	}
 	if !confirm {
 		return nil, errors.New("setup cancelled")
-	}
-
-	if runtimeProvider == "codex" {
-		codexSecretID, err := codexauth.StoreAPIKeyFunc(ctx, w.AWSProfile, region, codexauth.DefaultSecretName(), codexAPIKey)
-		if err != nil {
-			return nil, err
-		}
-		cfg.Runtime.Codex.SecretID = codexSecretID
 	}
 
 	return cfg, nil
@@ -346,6 +334,8 @@ func defaultRuntimeModel(provider string) string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case "aws-bedrock":
 		return "anthropic.claude-3-haiku-20240307-v1:0"
+	case "codex":
+		return ""
 	default:
 		return "llama3.2"
 	}

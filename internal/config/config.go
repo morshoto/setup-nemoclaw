@@ -59,7 +59,7 @@ type ImageConfig struct {
 
 type RuntimeConfig struct {
 	Endpoint   string      `yaml:"endpoint"`
-	Model      string      `yaml:"model"`
+	Model      string      `yaml:"model,omitempty"`
 	Port       int         `yaml:"port,omitempty"`
 	Provider   string      `yaml:"provider,omitempty"`
 	PublicCIDR string      `yaml:"public_cidr,omitempty"`
@@ -181,7 +181,8 @@ func Validate(cfg *Config) error {
 		v.Add("image.name", "is required")
 	}
 
-	if strings.ToLower(strings.TrimSpace(cfg.Runtime.Provider)) == "aws-bedrock" {
+	provider := strings.ToLower(strings.TrimSpace(cfg.Runtime.Provider))
+	if provider == "aws-bedrock" {
 		if strings.TrimSpace(cfg.Runtime.Model) == "" {
 			v.Add("runtime.model", "is required for aws-bedrock provider")
 		}
@@ -190,7 +191,7 @@ func Validate(cfg *Config) error {
 	} else if parsed, err := url.Parse(cfg.Runtime.Endpoint); err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		v.Add("runtime.endpoint", "must be a valid URL with scheme and host")
 	}
-	if cfg.Runtime.Model == "" {
+	if provider != "codex" && cfg.Runtime.Model == "" {
 		v.Add("runtime.model", "is required")
 	}
 	if cfg.Runtime.Port < 0 {
@@ -204,10 +205,6 @@ func Validate(cfg *Config) error {
 			v.Add("runtime.public_cidr", err.Error())
 		}
 	}
-	if strings.TrimSpace(cfg.Runtime.Provider) == "codex" && strings.TrimSpace(cfg.Runtime.Codex.SecretID) == "" {
-		v.Add("runtime.codex.secret_id", "is required when runtime.provider is codex")
-	}
-
 	if mode := EffectiveNetworkMode(cfg); mode != "" && mode != "public" && mode != "private" {
 		v.Add("instance.network_mode", "must be public or private")
 	}

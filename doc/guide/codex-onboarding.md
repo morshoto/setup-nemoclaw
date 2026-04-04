@@ -8,6 +8,7 @@ If you want the full command sequence for AWS, Terraform, Docker, and Codex setu
 ## Goal
 
 Set up Codex authentication on your local machine first, then move on to the CLI workflow that provisions or configures OpenClaw.
+This flow uses the browser-based Codex login and does not require an OpenAI API key.
 
 ## Prerequisites
 
@@ -27,6 +28,7 @@ openclaw onboard --auth-choice openai-codex
 2. The CLI launches the Codex login flow.
 3. Your browser opens and you sign in with ChatGPT.
 4. After the browser callback completes, the CLI records that Codex authentication is configured.
+5. If you are already signed in, the flow can reuse that existing local state.
 
 ## Expected Result
 
@@ -50,6 +52,7 @@ Those steps are handled separately by the AWS provisioning commands.
 
 After Codex authentication is ready, run the AWS provisioning workflow you need for your environment.
 For example, you can continue with the interactive setup flow or the non-interactive create flow depending on your config.
+If you are using `openclaw init`, selecting `codex` now tells you to use this browser login path instead of prompting for an API key.
 
 ## Notes
 

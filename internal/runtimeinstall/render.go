@@ -13,7 +13,7 @@ import (
 type RuntimeConfig struct {
 	UseNemoClaw bool    `yaml:"use_nemoclaw"`
 	NIMEndpoint string  `yaml:"nim_endpoint"`
-	Model       string  `yaml:"model"`
+	Model       string  `yaml:"model,omitempty"`
 	Port        int     `yaml:"port,omitempty"`
 	Provider    string  `yaml:"provider,omitempty"`
 	Region      string  `yaml:"region,omitempty"`

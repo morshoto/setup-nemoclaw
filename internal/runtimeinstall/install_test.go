@@ -149,6 +149,62 @@ func TestInstallerUploadsConfigAndRunsScript(t *testing.T) {
 	}
 }
 
+func TestInstallerSkipsCodexEnvWhenSecretIsUnavailable(t *testing.T) {
+	originalBuildRuntimeBinary := BuildRuntimeBinaryFunc
+	BuildRuntimeBinaryFunc = func(ctx context.Context) (string, error) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "openclaw")
+		if err := os.WriteFile(path, []byte("binary"), 0o700); err != nil {
+			return "", err
+		}
+		return path, nil
+	}
+	defer func() { BuildRuntimeBinaryFunc = originalBuildRuntimeBinary }()
+
+	exec := &fakeExecutor{
+		results: map[string]host.CommandResult{
+			"docker info":   {Stdout: "Docker Engine"},
+			"nvidia-smi -L": {Stdout: "GPU 0: demo"},
+			"docker info --format {{json .Runtimes}}":                                                {Stdout: `{"nvidia":{}}`},
+			"docker run --rm --gpus all --pull=never nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi": {Stdout: "NVIDIA-SMI"},
+			"sudo mkdir -p /opt/openclaw":                                                            {},
+			"chmod +x /opt/openclaw/install.sh":                                                      {},
+			"sh /opt/openclaw/install.sh /opt/openclaw/runtime.yaml":                                 {Stdout: "OpenClaw runtime installation complete"},
+			"sudo mkdir -p /opt/openclaw/bin":                                                        {},
+			"sudo chown -R ubuntu:ubuntu /opt/openclaw":                                              {},
+			"sudo mv /opt/openclaw/openclaw.upload /opt/openclaw/bin/openclaw":                       {},
+			"chmod +x /opt/openclaw/bin/openclaw":                                                    {},
+			"sudo mv /opt/openclaw/openclaw.service /etc/systemd/system/openclaw.service":            {},
+			"sudo systemctl daemon-reload":                                                           {},
+			"sudo systemctl enable --now openclaw.service":                                           {},
+		},
+	}
+
+	inst := Installer{Host: exec}
+	_, err := inst.Install(context.Background(), Request{
+		Config: &config.Config{
+			Runtime: config.RuntimeConfig{
+				Endpoint: "http://localhost:11434",
+				Model:    "llama3.2",
+				Provider: "codex",
+			},
+			Sandbox: config.SandboxConfig{Enabled: true, NetworkMode: "private", UseNemoClaw: true},
+		},
+		WorkingDir: "/opt/openclaw",
+	})
+	if err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	if len(exec.uploads) != 4 {
+		t.Fatalf("uploads = %#v, want 4 uploads", exec.uploads)
+	}
+	for _, upload := range exec.uploads {
+		if strings.Contains(upload.remote, "openclaw.env") {
+			t.Fatalf("unexpected codex env upload: %#v", upload)
+		}
+	}
+}
+
 func TestInstallerSkipsGPUChecksForCPUComputeClass(t *testing.T) {
 	originalBuildRuntimeBinary := BuildRuntimeBinaryFunc
 	BuildRuntimeBinaryFunc = func(ctx context.Context) (string, error) {

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"openclaw/internal/codexauth"
 	"openclaw/internal/config"
 	"openclaw/internal/prompt"
 	"openclaw/internal/provider"
@@ -93,12 +92,6 @@ func (f fakeProvider) CreateInstance(ctx context.Context, req provider.CreateIns
 func (f fakeProvider) DeleteInstance(ctx context.Context, instanceID string) error { return nil }
 
 func TestWizardWarnsAndContinuesWhenQuotaInsufficient(t *testing.T) {
-	originalStore := codexauth.StoreAPIKeyFunc
-	codexauth.StoreAPIKeyFunc = func(ctx context.Context, profile, region, secretName, apiKey string) (string, error) {
-		return "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:openclaw/codex-api-key", nil
-	}
-	defer func() { codexauth.StoreAPIKeyFunc = originalStore }()
-
 	input := strings.Join([]string{
 		"1", // platform aws
 		"",  // accept default GPU compute mode
@@ -110,9 +103,7 @@ func TestWizardWarnsAndContinuesWhenQuotaInsufficient(t *testing.T) {
 		"1",
 		"y",
 		"1",
-		"sk-test",
 		"http://localhost:11434",
-		"llama3.2",
 		"y",
 	}, "\n") + "\n"
 
@@ -152,12 +143,6 @@ func TestWizardWarnsAndContinuesWhenQuotaInsufficient(t *testing.T) {
 }
 
 func TestWizardFallsBackToBundledLookupsWhenAWSDataIsUnavailable(t *testing.T) {
-	originalStore := codexauth.StoreAPIKeyFunc
-	codexauth.StoreAPIKeyFunc = func(ctx context.Context, profile, region, secretName, apiKey string) (string, error) {
-		return "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:openclaw/codex-api-key", nil
-	}
-	defer func() { codexauth.StoreAPIKeyFunc = originalStore }()
-
 	input := strings.Join([]string{
 		"1", // platform aws
 		"",  // accept default GPU compute mode
@@ -168,9 +153,7 @@ func TestWizardFallsBackToBundledLookupsWhenAWSDataIsUnavailable(t *testing.T) {
 		"1",
 		"y",
 		"1",
-		"sk-test",
 		"http://localhost:11434",
-		"llama3.2",
 		"y",
 	}, "\n") + "\n"
 
@@ -211,12 +194,6 @@ func TestWizardFallsBackToBundledLookupsWhenAWSDataIsUnavailable(t *testing.T) {
 }
 
 func TestWizardWarnsAndContinuesWhenQuotaCheckUnavailable(t *testing.T) {
-	originalStore := codexauth.StoreAPIKeyFunc
-	codexauth.StoreAPIKeyFunc = func(ctx context.Context, profile, region, secretName, apiKey string) (string, error) {
-		return "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:openclaw/codex-api-key", nil
-	}
-	defer func() { codexauth.StoreAPIKeyFunc = originalStore }()
-
 	input := strings.Join([]string{
 		"1", // platform aws
 		"",  // accept default GPU compute mode
@@ -227,9 +204,7 @@ func TestWizardWarnsAndContinuesWhenQuotaCheckUnavailable(t *testing.T) {
 		"1",
 		"y",
 		"1",
-		"sk-test",
 		"http://localhost:11434",
-		"llama3.2",
 		"y",
 	}, "\n") + "\n"
 
@@ -260,12 +235,6 @@ func TestWizardWarnsAndContinuesWhenQuotaCheckUnavailable(t *testing.T) {
 }
 
 func TestWizardFallsBackToBundledImagesWhenSSMIsUnavailable(t *testing.T) {
-	originalStore := codexauth.StoreAPIKeyFunc
-	codexauth.StoreAPIKeyFunc = func(ctx context.Context, profile, region, secretName, apiKey string) (string, error) {
-		return "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:openclaw/codex-api-key", nil
-	}
-	defer func() { codexauth.StoreAPIKeyFunc = originalStore }()
-
 	input := strings.Join([]string{
 		"1", // platform aws
 		"",  // accept default GPU compute mode
@@ -276,9 +245,7 @@ func TestWizardFallsBackToBundledImagesWhenSSMIsUnavailable(t *testing.T) {
 		"1",
 		"y",
 		"1",
-		"sk-test",
 		"http://localhost:11434",
-		"llama3.2",
 		"y",
 	}, "\n") + "\n"
 
@@ -321,12 +288,6 @@ func TestWizardFallsBackToBundledImagesWhenSSMIsUnavailable(t *testing.T) {
 }
 
 func TestWizardFallsBackToBundledImagesWhenImageLookupFails(t *testing.T) {
-	originalStore := codexauth.StoreAPIKeyFunc
-	codexauth.StoreAPIKeyFunc = func(ctx context.Context, profile, region, secretName, apiKey string) (string, error) {
-		return "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:openclaw/codex-api-key", nil
-	}
-	defer func() { codexauth.StoreAPIKeyFunc = originalStore }()
-
 	input := strings.Join([]string{
 		"1", // platform aws
 		"",  // accept default GPU compute mode
@@ -337,9 +298,7 @@ func TestWizardFallsBackToBundledImagesWhenImageLookupFails(t *testing.T) {
 		"1",
 		"y",
 		"1",
-		"sk-test",
 		"http://localhost:11434",
-		"llama3.2",
 		"y",
 	}, "\n") + "\n"
 

@@ -9,20 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"openclaw/internal/codexauth"
 	"openclaw/internal/config"
 	"openclaw/internal/provider"
 	awsprovider "openclaw/internal/provider/aws"
 )
-
-func stubCodexSecretStore(t *testing.T) {
-	t.Helper()
-	original := codexauth.StoreAPIKeyFunc
-	codexauth.StoreAPIKeyFunc = func(ctx context.Context, profile, region, secretName, apiKey string) (string, error) {
-		return "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:openclaw/codex-api-key", nil
-	}
-	t.Cleanup(func() { codexauth.StoreAPIKeyFunc = original })
-}
 
 func stubGitHubSSHSetup(t *testing.T) {
 	t.Helper()
@@ -61,7 +51,6 @@ func stubGitHubSSHSetup(t *testing.T) {
 func TestInitWritesConfigFile(t *testing.T) {
 	restore := stubAWSProviderFactory()
 	defer restore()
-	stubCodexSecretStore(t)
 	stubGitHubSSHSetup(t)
 
 	dir := t.TempDir()
@@ -81,9 +70,7 @@ func TestInitWritesConfigFile(t *testing.T) {
 		"",                       // authenticate Git with your GitHub credentials
 		"y",                      // use NemoClaw
 		"1",                      // provider codex
-		"sk-test",                // OpenAI API key
 		"http://localhost:11434", // endpoint
-		"llama3.2",               // model
 		"y",                      // confirm summary
 	}, "\n") + "\n"
 
@@ -123,9 +110,7 @@ func TestInitWritesConfigFile(t *testing.T) {
 		"module_dir: infra/aws/ec2",
 		"use_nemoclaw: true",
 		"provider: codex",
-		"secret_id: arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:openclaw/codex-api-key",
 		"endpoint: http://localhost:11434",
-		"model: llama3.2",
 	} {
 		if !strings.Contains(body, fragment) {
 			t.Fatalf("config file %q missing %q", body, fragment)
@@ -145,7 +130,6 @@ func TestInitSupportsCPUComputeMode(t *testing.T) {
 		return stubCloudProvider{profile: profile}
 	}
 	defer func() { newAWSProvider = original }()
-	stubCodexSecretStore(t)
 	stubGitHubSSHSetup(t)
 
 	dir := t.TempDir()
@@ -165,9 +149,7 @@ func TestInitSupportsCPUComputeMode(t *testing.T) {
 		"",
 		"y",
 		"1",
-		"sk-test",
 		"", // accept placeholder external endpoint
-		"", // accept default model
 		"y",
 	}, "\n") + "\n"
 
@@ -273,7 +255,6 @@ func TestInitDoesNotCreateAWSProviderBeforePlatformSelection(t *testing.T) {
 func TestInitPreselectsRegionFromExistingConfig(t *testing.T) {
 	restore := stubAWSProviderFactory()
 	defer restore()
-	stubCodexSecretStore(t)
 	stubGitHubSSHSetup(t)
 
 	dir := t.TempDir()
@@ -312,9 +293,7 @@ sandbox:
 		"",
 		"y",
 		"1",
-		"sk-test",
 		"http://localhost:11434",
-		"llama3.2",
 		"y",
 	}, "\n") + "\n"
 
@@ -355,7 +334,6 @@ func TestInitContinuesWhenAWSAuthCheckIsPermissionDenied(t *testing.T) {
 		}
 	}
 	defer func() { newAWSProvider = original }()
-	stubCodexSecretStore(t)
 	stubGitHubSSHSetup(t)
 
 	dir := t.TempDir()
@@ -375,9 +353,7 @@ func TestInitContinuesWhenAWSAuthCheckIsPermissionDenied(t *testing.T) {
 		"",                       // authenticate Git with your GitHub credentials
 		"y",                      // use NemoClaw
 		"1",                      // provider codex
-		"sk-test",                // OpenAI API key
 		"http://localhost:11434", // endpoint
-		"llama3.2",               // model
 		"y",                      // confirm summary
 	}, "\n") + "\n"
 
@@ -414,7 +390,6 @@ func TestInitContinuesWhenAWSAuthCheckFailsAtSTS(t *testing.T) {
 		}
 	}
 	defer func() { newAWSProvider = original }()
-	stubCodexSecretStore(t)
 	stubGitHubSSHSetup(t)
 
 	dir := t.TempDir()
@@ -434,9 +409,7 @@ func TestInitContinuesWhenAWSAuthCheckFailsAtSTS(t *testing.T) {
 		"",                       // authenticate Git with your GitHub credentials
 		"y",                      // use NemoClaw
 		"1",                      // provider codex
-		"sk-test",                // OpenAI API key
 		"http://localhost:11434", // endpoint
-		"llama3.2",               // model
 		"y",                      // confirm summary
 	}, "\n") + "\n"
 
@@ -473,7 +446,6 @@ func TestInitFallsBackWhenAWSImageLookupIsPermissionDenied(t *testing.T) {
 		}
 	}
 	defer func() { newAWSProvider = original }()
-	stubCodexSecretStore(t)
 	stubGitHubSSHSetup(t)
 
 	dir := t.TempDir()
@@ -493,9 +465,7 @@ func TestInitFallsBackWhenAWSImageLookupIsPermissionDenied(t *testing.T) {
 		"",                       // authenticate Git with your GitHub credentials
 		"y",                      // use NemoClaw
 		"1",                      // provider codex
-		"sk-test",                // OpenAI API key
 		"http://localhost:11434", // endpoint
-		"llama3.2",               // model
 		"y",                      // confirm summary
 	}, "\n") + "\n"
 
