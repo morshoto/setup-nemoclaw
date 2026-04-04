@@ -42,6 +42,11 @@ variable "ssh_public_key" {
   default = ""
 }
 
+variable "github_private_key" {
+  type    = string
+  default = ""
+}
+
 variable "ssh_cidr" {
   type    = string
   default = ""

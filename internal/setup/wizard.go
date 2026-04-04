@@ -117,6 +117,7 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 
 	sshKeyName := ""
 	sshPrivateKeyPath := defaultSSHPrivateKeyPath()
+	githubPrivateKeyPath := ""
 	sshCIDR := ""
 	sshUser := ""
 	if w.Existing != nil {
@@ -124,6 +125,7 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 		if existingPath := strings.TrimSpace(w.Existing.SSH.PrivateKeyPath); existingPath != "" {
 			sshPrivateKeyPath = existingPath
 		}
+		githubPrivateKeyPath = strings.TrimSpace(w.Existing.SSH.GitHubPrivateKeyPath)
 		sshCIDR = strings.TrimSpace(w.Existing.SSH.CIDR)
 		sshUser = strings.TrimSpace(w.Existing.SSH.User)
 	}
@@ -153,6 +155,14 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 			sshUserDefault = sshUsernameForImage(image.Name, image.ID)
 		}
 		sshUser, err = w.Prompter.Text("SSH user", sshUserDefault)
+		if err != nil {
+			return nil, err
+		}
+		githubPrivateKeyDefault := githubPrivateKeyPath
+		if githubPrivateKeyDefault == "" {
+			githubPrivateKeyDefault = sshPrivateKeyPath
+		}
+		githubPrivateKeyPath, err = w.Prompter.Text("GitHub SSH private key path", githubPrivateKeyDefault)
 		if err != nil {
 			return nil, err
 		}
@@ -210,10 +220,11 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 		Instance: config.InstanceConfig{Type: instanceType, DiskSizeGB: diskSize, NetworkMode: networkMode},
 		Image:    config.ImageConfig{Name: image.Name, ID: image.ID},
 		SSH: config.SSHConfig{
-			KeyName:        sshKeyName,
-			PrivateKeyPath: sshPrivateKeyPath,
-			CIDR:           sshCIDR,
-			User:           sshUser,
+			KeyName:              sshKeyName,
+			PrivateKeyPath:       sshPrivateKeyPath,
+			GitHubPrivateKeyPath: githubPrivateKeyPath,
+			CIDR:                 sshCIDR,
+			User:                 sshUser,
 		},
 		Infra: config.InfraConfig{
 			Backend:   "terraform",
@@ -250,6 +261,9 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 	}
 	if strings.TrimSpace(cfg.SSH.PrivateKeyPath) != "" {
 		fmt.Fprintf(w.Out, "ssh private key: %s\n", cfg.SSH.PrivateKeyPath)
+	}
+	if strings.TrimSpace(cfg.SSH.GitHubPrivateKeyPath) != "" {
+		fmt.Fprintf(w.Out, "github ssh private key: %s\n", cfg.SSH.GitHubPrivateKeyPath)
 	}
 	if strings.TrimSpace(cfg.SSH.CIDR) != "" {
 		fmt.Fprintf(w.Out, "ssh cidr: %s\n", cfg.SSH.CIDR)

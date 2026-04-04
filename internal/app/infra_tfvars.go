@@ -27,7 +27,7 @@ func newInfraTFVarsCommand(app *App) *cobra.Command {
 		Short: "Generate deploy-ready terraform.tfvars from a configuration file",
 		Long: strings.TrimSpace(`Generate a deploy-ready terraform.tfvars file from an OpenClaw config.
 
-This command resolves the active AWS profile, derives the SSH public key from the configured private key path, and stages the current working tree as a bootstrap archive URL. It is intended for deploy-time use and can fail if the local git state, SSH key, or AWS environment is not ready.`),
+This command resolves the active AWS profile, derives the SSH public key from the configured private key path, provisions the same key material for GitHub SSH access on the host, and stages the current working tree as a bootstrap archive URL. It is intended for deploy-time use and can fail if the local git state, SSH key, or AWS environment is not ready.`),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if strings.TrimSpace(app.opts.ConfigPath) == "" {
 				return errors.New("config file is required: pass --config <path>")
@@ -125,26 +125,27 @@ func buildTerraformVars(ctx context.Context, profile string, cfg *config.Config)
 	}
 
 	return terraformVars{
-		AWSProfile:      strings.TrimSpace(profile),
-		Region:          cfg.Region.Name,
-		ComputeClass:    config.EffectiveComputeClass(cfg.Compute.Class),
-		InstanceType:    strings.TrimSpace(cfg.Instance.Type),
-		DiskSizeGB:      cfg.Instance.DiskSizeGB,
-		NetworkMode:     inputs.NetworkMode,
-		ImageName:       strings.TrimSpace(cfg.Image.Name),
-		ImageID:         strings.TrimSpace(cfg.Image.ID),
-		RuntimePort:     inputs.RuntimePort,
-		RuntimeCIDR:     inputs.RuntimeCIDR,
-		RuntimeProvider: inputs.RuntimeProvider,
-		SSHKeyName:      inputs.SSHKeyName,
-		SSHPublicKey:    inputs.SSHPublicKey,
-		SSHCIDR:         inputs.SSHCIDR,
-		SSHUser:         inputs.SSHUser,
-		NamePrefix:      "openclaw",
-		UseNemoClaw:     cfg.Sandbox.UseNemoClaw,
-		NIMEndpoint:     cfg.Runtime.Endpoint,
-		Model:           cfg.Runtime.Model,
-		SourceURL:       inputs.SourceURL,
+		AWSProfile:       strings.TrimSpace(profile),
+		Region:           cfg.Region.Name,
+		ComputeClass:     config.EffectiveComputeClass(cfg.Compute.Class),
+		InstanceType:     strings.TrimSpace(cfg.Instance.Type),
+		DiskSizeGB:       cfg.Instance.DiskSizeGB,
+		NetworkMode:      inputs.NetworkMode,
+		ImageName:        strings.TrimSpace(cfg.Image.Name),
+		ImageID:          strings.TrimSpace(cfg.Image.ID),
+		RuntimePort:      inputs.RuntimePort,
+		RuntimeCIDR:      inputs.RuntimeCIDR,
+		RuntimeProvider:  inputs.RuntimeProvider,
+		SSHKeyName:       inputs.SSHKeyName,
+		SSHPublicKey:     inputs.SSHPublicKey,
+		GitHubPrivateKey: inputs.GitHubPrivateKey,
+		SSHCIDR:          inputs.SSHCIDR,
+		SSHUser:          inputs.SSHUser,
+		NamePrefix:       "openclaw",
+		UseNemoClaw:      cfg.Sandbox.UseNemoClaw,
+		NIMEndpoint:      cfg.Runtime.Endpoint,
+		Model:            cfg.Runtime.Model,
+		SourceURL:        inputs.SourceURL,
 	}, nil
 }
 
@@ -179,6 +180,7 @@ func renderTerraformVars(vars terraformVars) string {
 		"runtime_provider",
 		"ssh_key_name",
 		"ssh_public_key",
+		"github_private_key",
 		"ssh_cidr",
 		"ssh_user",
 		"name_prefix",
@@ -207,6 +209,7 @@ func renderTerraformVars(vars terraformVars) string {
 		fmt.Sprintf("%-*s = %s", maxWidth, "runtime_provider", terraformQuoted(vars.RuntimeProvider)),
 		fmt.Sprintf("%-*s = %s", maxWidth, "ssh_key_name", terraformQuoted(vars.SSHKeyName)),
 		fmt.Sprintf("%-*s = %s", maxWidth, "ssh_public_key", terraformQuoted(vars.SSHPublicKey)),
+		fmt.Sprintf("%-*s = %s", maxWidth, "github_private_key", terraformQuoted(vars.GitHubPrivateKey)),
 		fmt.Sprintf("%-*s = %s", maxWidth, "ssh_cidr", terraformQuoted(vars.SSHCIDR)),
 		fmt.Sprintf("%-*s = %s", maxWidth, "ssh_user", terraformQuoted(vars.SSHUser)),
 		fmt.Sprintf("%-*s = %s", maxWidth, "name_prefix", terraformQuoted(vars.NamePrefix)),

@@ -167,12 +167,16 @@ func TestInfraCreateCommandReportsCreatedInstance(t *testing.T) {
 
 	originalBackend := newTerraformBackend
 	originalDeriveSSHPublicKey := deriveSSHPublicKeyFunc
+	originalReadGitHubPrivateKey := readGitHubPrivateKeyFunc
 	originalEnsureSSHPrivateKey := ensureSSHPrivateKeyFunc
 	ensureSSHPrivateKeyFunc = func(ctx context.Context, privateKeyPath string) (string, error) {
 		return privateKeyPath, nil
 	}
 	deriveSSHPublicKeyFunc = func(ctx context.Context, privateKeyPath string) (string, error) {
 		return "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestPublicKey openclaw", nil
+	}
+	readGitHubPrivateKeyFunc = func(ctx context.Context, privateKeyPath string) (string, error) {
+		return "-----BEGIN OPENSSH PRIVATE KEY-----\nTEST-GITHUB-KEY\n-----END OPENSSH PRIVATE KEY-----", nil
 	}
 	newTerraformBackend = func(profile string, cfg *config.Config) (infratf.InfraBackend, error) {
 		return fakeTerraformBackend{
@@ -190,6 +194,7 @@ func TestInfraCreateCommandReportsCreatedInstance(t *testing.T) {
 	}
 	defer func() { newTerraformBackend = originalBackend }()
 	defer func() { deriveSSHPublicKeyFunc = originalDeriveSSHPublicKey }()
+	defer func() { readGitHubPrivateKeyFunc = originalReadGitHubPrivateKey }()
 	defer func() { ensureSSHPrivateKeyFunc = originalEnsureSSHPrivateKey }()
 
 	dir := t.TempDir()

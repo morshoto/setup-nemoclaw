@@ -43,6 +43,7 @@ func TestInitWritesConfigFile(t *testing.T) {
 		"/tmp/demo.pem",          // ssh private key
 		"203.0.113.0/24",         // ssh cidr
 		"ubuntu",                 // ssh user
+		"",                       // github ssh private key path
 		"y",                      // use NemoClaw
 		"1",                      // provider codex
 		"sk-test",                // OpenAI API key
@@ -81,6 +82,7 @@ func TestInitWritesConfigFile(t *testing.T) {
 		"network_mode: public",
 		"key_name: demo-key",
 		"private_key_path: /tmp/demo.pem",
+		"github_private_key_path: /tmp/demo.pem",
 		"cidr: 203.0.113.0/24",
 		"user: ubuntu",
 		"backend: terraform",
@@ -125,6 +127,7 @@ func TestInitSupportsCPUComputeMode(t *testing.T) {
 		"/tmp/demo.pem",
 		"203.0.113.0/24",
 		"ubuntu",
+		"",
 		"y",
 		"1",
 		"sk-test",
@@ -270,6 +273,7 @@ sandbox:
 		"/tmp/demo.pem",
 		"203.0.113.0/24",
 		"ubuntu",
+		"",
 		"y",
 		"1",
 		"sk-test",
@@ -331,6 +335,7 @@ func TestInitContinuesWhenAWSAuthCheckIsPermissionDenied(t *testing.T) {
 		"/tmp/demo.pem",          // ssh private key
 		"203.0.113.0/24",         // ssh cidr
 		"ubuntu",                 // ssh user
+		"",                       // github ssh private key path
 		"y",                      // use NemoClaw
 		"1",                      // provider codex
 		"sk-test",                // OpenAI API key
@@ -388,6 +393,7 @@ func TestInitContinuesWhenAWSAuthCheckFailsAtSTS(t *testing.T) {
 		"/tmp/demo.pem",          // ssh private key
 		"203.0.113.0/24",         // ssh cidr
 		"ubuntu",                 // ssh user
+		"",                       // github ssh private key path
 		"y",                      // use NemoClaw
 		"1",                      // provider codex
 		"sk-test",                // OpenAI API key
@@ -445,6 +451,7 @@ func TestInitFallsBackWhenAWSImageLookupIsPermissionDenied(t *testing.T) {
 		"/tmp/demo.pem",          // ssh private key
 		"203.0.113.0/24",         // ssh cidr
 		"ubuntu",                 // ssh user
+		"",                       // github ssh private key path
 		"y",                      // use NemoClaw
 		"1",                      // provider codex
 		"sk-test",                // OpenAI API key

@@ -71,10 +71,11 @@ type CodexConfig struct {
 }
 
 type SSHConfig struct {
-	KeyName        string `yaml:"key_name,omitempty"`
-	PrivateKeyPath string `yaml:"private_key_path,omitempty"`
-	CIDR           string `yaml:"cidr,omitempty"`
-	User           string `yaml:"user,omitempty"`
+	KeyName              string `yaml:"key_name,omitempty"`
+	PrivateKeyPath       string `yaml:"private_key_path,omitempty"`
+	GitHubPrivateKeyPath string `yaml:"github_private_key_path,omitempty"`
+	CIDR                 string `yaml:"cidr,omitempty"`
+	User                 string `yaml:"user,omitempty"`
 }
 
 type InfraConfig struct {

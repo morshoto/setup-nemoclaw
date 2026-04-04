@@ -5,16 +5,40 @@ exec > >(tee /var/log/openclaw-bootstrap.log | logger -t openclaw-bootstrap -s 2
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl docker.io tar
+apt-get install -y ca-certificates curl docker.io git openssh-client tar
 systemctl enable --now docker
 usermod -aG docker ubuntu || true
 
 install -d -m 0755 /opt/openclaw/src
 install -d -m 0755 /opt/openclaw
+install -d -m 0700 /home/ubuntu/.ssh
+chown ubuntu:ubuntu /home/ubuntu/.ssh
 
 cat > /opt/openclaw/runtime.yaml <<'EOF'
 ${runtime_config_yaml}
 EOF
+
+%{ if trimspace(github_private_key) != "" }
+  cat > /home/ubuntu/.ssh/id_ed25519 <<'EOF'
+${github_private_key}
+EOF
+  chown ubuntu:ubuntu /home/ubuntu/.ssh/id_ed25519
+  chmod 0600 /home/ubuntu/.ssh/id_ed25519
+
+  cat > /home/ubuntu/.ssh/config <<'EOF'
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+EOF
+  chown ubuntu:ubuntu /home/ubuntu/.ssh/config
+  chmod 0600 /home/ubuntu/.ssh/config
+
+  ssh-keyscan github.com >> /home/ubuntu/.ssh/known_hosts
+  chown ubuntu:ubuntu /home/ubuntu/.ssh/known_hosts
+  chmod 0600 /home/ubuntu/.ssh/known_hosts
+%{ endif }
 
 curl -fsSL "${source_archive_url}" | tar -xz -C /opt/openclaw/src --strip-components=1
 

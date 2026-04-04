@@ -71,6 +71,7 @@ locals {
     listen_port         = local.listen_port
     runtime_provider    = local.runtime_provider
     runtime_config_yaml = local.runtime_config_yaml
+    github_private_key  = trimspace(var.github_private_key)
     source_archive_url  = trimspace(var.source_archive_url)
   })
 
