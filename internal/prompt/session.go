@@ -78,6 +78,27 @@ func (s *Session) Select(label string, options []string, defaultValue string) (s
 	return s.selectWithLine(label, options, defaultValue)
 }
 
+func (s *Session) SelectSearch(label string, options []string, defaultValue string) (string, error) {
+	if !s.Interactive {
+		return fallbackValue(defaultValue, options)
+	}
+	if len(options) == 0 {
+		return "", fmt.Errorf("%s: no options available", label)
+	}
+
+	if s.canUseCursorMenu() {
+		selected, err := s.selectWithSearchCursor(label, options, defaultValue)
+		switch {
+		case err == nil:
+			return selected, nil
+		case errors.Is(err, errCursorMenuUnavailable):
+		default:
+			return "", err
+		}
+	}
+	return s.selectWithLine(label, options, defaultValue)
+}
+
 func (s *Session) selectWithLine(label string, options []string, defaultValue string) (string, error) {
 	fmt.Fprintln(s.out, s.style(ansiBrightCyan, label))
 	for i, option := range options {

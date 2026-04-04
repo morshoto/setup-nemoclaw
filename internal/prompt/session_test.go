@@ -95,6 +95,20 @@ func TestSessionReadMenuKeyParsesArrowsAndDigits(t *testing.T) {
 	}
 }
 
+func TestFilterSearchOptionsMatchesInstanceFamilyBoundaries(t *testing.T) {
+	options := []string{"g5.xlarge", "g5g.xlarge", "t3.medium", "t3a.medium", "t3.xlarge", "t4g.large"}
+	got := filterSearchOptions(options, "t3")
+	want := []string{"t3.medium", "t3.xlarge"}
+	if len(got) != len(want) {
+		t.Fatalf("filterSearchOptions() len = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("filterSearchOptions()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 func TestRenderMenuClearsPreviousLinesBeforeRedraw(t *testing.T) {
 	out := &bytes.Buffer{}
 	session := NewSession(strings.NewReader(""), out)

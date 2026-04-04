@@ -111,7 +111,7 @@ func (w *Wizard) Run(ctx context.Context) (*config.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	instanceType, err := w.Prompter.Select("Select instance type", instanceTypes, defaultInstanceType(computeClass))
+	instanceType, err := w.Prompter.SelectSearch("Select instance type", instanceTypes, defaultInstanceType(computeClass))
 	if err != nil {
 		return nil, err
 	}
@@ -464,18 +464,6 @@ func (w *Wizard) warnOnQuota(ctx context.Context, region string) error {
 		return errors.New("setup cancelled due to insufficient quota")
 	}
 	return nil
-}
-
-func defaultOption(options []string, fallback string) string {
-	if len(options) == 0 {
-		return fallback
-	}
-	for _, option := range options {
-		if option == fallback {
-			return fallback
-		}
-	}
-	return options[0]
 }
 
 func defaultComputeClass(existing *config.Config) string {

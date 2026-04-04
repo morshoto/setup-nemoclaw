@@ -9,3 +9,7 @@ func (s *Session) canUseCursorMenu() bool {
 func (s *Session) selectWithCursor(label string, options []string, defaultValue string) (string, error) {
 	return "", errCursorMenuUnavailable
 }
+
+func (s *Session) selectWithSearchCursor(label string, options []string, defaultValue string) (string, error) {
+	return "", errCursorMenuUnavailable
+}
